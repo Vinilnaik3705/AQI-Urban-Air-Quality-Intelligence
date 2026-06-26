@@ -1427,8 +1427,11 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
           </div>
         </div>
       </div>
+    </>
   );
 }
+
+
 
 
 /* ── Attribution View ──────────────────────────────────────────────────── */

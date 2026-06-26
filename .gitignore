@@ -1,0 +1,9 @@
+.env
+.cache
+checkpoints/
+artifacts/
+*.pkl
+*.csv
+__pycache__/
+*.pyc
+.ipynb_checkpoints/

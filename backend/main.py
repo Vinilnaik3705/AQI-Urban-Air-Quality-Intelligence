@@ -75,9 +75,16 @@ def _city_wards(city_key: str):
     if not city:
         # Check if it's in the dynamic cache or default it
         return [{"id": city_key, "name": city_key.capitalize(), "state": "", "country": "", "center": [0.0, 0.0]}]
+    # For ward-level cities (with a parent), label with parent city name for context
+    parent = city.get("parent")
+    if parent and parent in CITIES:
+        parent_city = CITIES[parent]
+        display_name = f"{city['name']}, {parent_city['name']}"
+    else:
+        display_name = city["name"]
     return [{
         "id": city_key,
-        "name": city["name"],
+        "name": display_name,
         "state": city.get("state", ""),
         "country": city.get("country", ""),
         "center": city["center"],
@@ -113,7 +120,14 @@ async def get_state(city: str = Query(default="all")):
                 continue
             city_name = city_data["name"]
             country = city_data.get("country", "")
-            place_label = f"{city_name}, {country}" if country else city_name
+            parent = city_data.get("parent")
+            if parent and parent in CITIES:
+                parent_data = CITIES[parent]
+                place_label = f"{city_name}, {parent_data['name']}"
+            elif country:
+                place_label = f"{city_name}, {country}"
+            else:
+                place_label = city_name
             
             combined_wards.append({
                 "id": f"{city_key}_{city_key}",

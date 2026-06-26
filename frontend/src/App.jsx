@@ -86,12 +86,15 @@ function getAqiTextColor(aqi) {
   return '#ffffff';
 }
 
-function createAqiIcon(aqi) {
+function createAqiIcon(aqi, isWard = false) {
+  const size = isWard ? 26 : 32;
+  const anchor = isWard ? 13 : 16;
+  const ring = isWard ? '1.5px solid rgba(255,255,255,0.4)' : '2px solid rgba(255,255,255,0.6)';
   return L.divIcon({
     className: 'custom-aqi-bubble',
-    html: `<div class="aqi-bubble-inner" style="background-color: ${aqiColor(aqi)}; color: ${getAqiTextColor(aqi)}">${Math.round(aqi)}</div>`,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15]
+    html: `<div class="aqi-bubble-inner" style="background-color: ${aqiColor(aqi)}; color: ${getAqiTextColor(aqi)}; width:${size}px; height:${size}px; line-height:${size}px; font-size:${isWard ? 10 : 12}px; border:${ring}; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; box-shadow:0 2px 6px rgba(0,0,0,0.5)">${Math.round(aqi)}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [anchor, anchor]
   });
 }
 
@@ -793,11 +796,16 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
             const ward = state.wards.find(w => w.id === s.ward_id)
             const placeLabel = ward ? ward.name : s.sensor_id
             const aqiVal = aqiStandard === 'US' ? (s.aqi_us ?? s.aqi) : (s.aqi_in ?? s.aqi);
+            const isWard = s.ward_id && s.ward_id.includes('_') && (
+              s.ward_id.startsWith('delhi_') || s.ward_id.startsWith('mumbai_') ||
+              s.ward_id.startsWith('bengaluru_') || s.ward_id.startsWith('chennai_') ||
+              s.ward_id.startsWith('hyderabad_') || s.ward_id.startsWith('kolkata_')
+            );
             return (
               <Marker
                 key={s.sensor_id}
                 position={s.location}
-                icon={createAqiIcon(aqiVal)}
+                icon={createAqiIcon(aqiVal, isWard)}
                 eventHandlers={{
                   click: () => {
                     if (ward) onSelectWard(ward);
@@ -1128,11 +1136,17 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
                 icon={createAqiIcon(c.aqi)}
               />
             ))}
-            {snapshot && snapshot.wards.map(w => (
+            {snapshot && snapshot.wards.map(w => {
+              const isWard = w.ward_id && (
+                w.ward_id.startsWith('delhi_') || w.ward_id.startsWith('mumbai_') ||
+                w.ward_id.startsWith('bengaluru_') || w.ward_id.startsWith('chennai_') ||
+                w.ward_id.startsWith('hyderabad_') || w.ward_id.startsWith('kolkata_')
+              );
+              return (
               <Marker
                 key={w.ward_id}
                 position={w.center}
-                icon={createAqiIcon(w.predicted_aqi)}
+                icon={createAqiIcon(w.predicted_aqi, isWard)}
                 eventHandlers={{
                   click: () => {
                     const matched = state.wards.find(ward => ward.id === w.ward_id);
@@ -1150,7 +1164,7 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
                   </div>
                 </Popup>
               </Marker>
-            ))}
+            )})}
           </MapContainer>
         </div>
 

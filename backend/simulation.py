@@ -193,6 +193,56 @@ CITIES: Dict[str, Dict[str, Any]] = {
     "shani_shingnapur": {"name": "Shani Shingnapur", "state": "Maharashtra", "country": "India", "center": [19.3833, 74.8167]},
     "orai": {"name": "Orai", "state": "Uttar Pradesh", "country": "India", "center": [25.9897, 79.4514]},
 
+    # ── Delhi Wards (sub-localities) ─────────────────────────────────────
+    "delhi_connaught": {"name": "Connaught Place", "state": "Delhi", "country": "India", "center": [28.6315, 77.2167], "parent": "delhi"},
+    "delhi_rohini": {"name": "Rohini", "state": "Delhi", "country": "India", "center": [28.7390, 77.1100], "parent": "delhi"},
+    "delhi_dwarka": {"name": "Dwarka", "state": "Delhi", "country": "India", "center": [28.5823, 77.0459], "parent": "delhi"},
+    "delhi_shahdara": {"name": "Shahdara", "state": "Delhi", "country": "India", "center": [28.6730, 77.2787], "parent": "delhi"},
+    "delhi_anandvihar": {"name": "Anand Vihar", "state": "Delhi", "country": "India", "center": [28.6469, 77.3160], "parent": "delhi"},
+    "delhi_nehruplace": {"name": "Nehru Place", "state": "Delhi", "country": "India", "center": [28.5491, 77.2513], "parent": "delhi"},
+    "delhi_janakpuri": {"name": "Janakpuri", "state": "Delhi", "country": "India", "center": [28.6219, 77.0878], "parent": "delhi"},
+    "delhi_kashmirigate": {"name": "Kashmiri Gate", "state": "Delhi", "country": "India", "center": [28.6663, 77.2279], "parent": "delhi"},
+    "delhi_okhla": {"name": "Okhla Industrial Area", "state": "Delhi", "country": "India", "center": [28.5355, 77.2641], "parent": "delhi"},
+    "delhi_wazirpur": {"name": "Wazirpur Industrial Area", "state": "Delhi", "country": "India", "center": [28.6990, 77.1650], "parent": "delhi"},
+
+    # ── Mumbai Wards ──────────────────────────────────────────────────────
+    "mumbai_bandra": {"name": "Bandra", "state": "Maharashtra", "country": "India", "center": [19.0596, 72.8295], "parent": "mumbai"},
+    "mumbai_andheri": {"name": "Andheri", "state": "Maharashtra", "country": "India", "center": [19.1197, 72.8468], "parent": "mumbai"},
+    "mumbai_kurla": {"name": "Kurla", "state": "Maharashtra", "country": "India", "center": [19.0726, 72.8797], "parent": "mumbai"},
+    "mumbai_chembur": {"name": "Chembur", "state": "Maharashtra", "country": "India", "center": [19.0622, 72.8993], "parent": "mumbai"},
+    "mumbai_colaba": {"name": "Colaba", "state": "Maharashtra", "country": "India", "center": [18.9067, 72.8147], "parent": "mumbai"},
+    "mumbai_borivali": {"name": "Borivali", "state": "Maharashtra", "country": "India", "center": [19.2288, 72.8554], "parent": "mumbai"},
+    "mumbai_worli": {"name": "Worli", "state": "Maharashtra", "country": "India", "center": [19.0096, 72.8176], "parent": "mumbai"},
+
+    # ── Bengaluru Wards ───────────────────────────────────────────────────
+    "bengaluru_koramangala": {"name": "Koramangala", "state": "Karnataka", "country": "India", "center": [12.9352, 77.6245], "parent": "bengaluru"},
+    "bengaluru_whitefield": {"name": "Whitefield", "state": "Karnataka", "country": "India", "center": [12.9698, 77.7500], "parent": "bengaluru"},
+    "bengaluru_yelahanka": {"name": "Yelahanka", "state": "Karnataka", "country": "India", "center": [13.1007, 77.5963], "parent": "bengaluru"},
+    "bengaluru_btm": {"name": "BTM Layout", "state": "Karnataka", "country": "India", "center": [12.9166, 77.6101], "parent": "bengaluru"},
+    "bengaluru_hebbal": {"name": "Hebbal", "state": "Karnataka", "country": "India", "center": [13.0354, 77.5910], "parent": "bengaluru"},
+    "bengaluru_jayanagar": {"name": "Jayanagar", "state": "Karnataka", "country": "India", "center": [12.9308, 77.5832], "parent": "bengaluru"},
+
+    # ── Chennai Wards ─────────────────────────────────────────────────────
+    "chennai_adyar": {"name": "Adyar", "state": "Tamil Nadu", "country": "India", "center": [13.0012, 80.2565], "parent": "chennai"},
+    "chennai_aminjikarai": {"name": "Aminjikarai", "state": "Tamil Nadu", "country": "India", "center": [13.0827, 80.2166], "parent": "chennai"},
+    "chennai_manali": {"name": "Manali Industrial Area", "state": "Tamil Nadu", "country": "India", "center": [13.1659, 80.2632], "parent": "chennai"},
+    "chennai_nungambakkam": {"name": "Nungambakkam", "state": "Tamil Nadu", "country": "India", "center": [13.0605, 80.2422], "parent": "chennai"},
+    "chennai_velachery": {"name": "Velachery", "state": "Tamil Nadu", "country": "India", "center": [12.9815, 80.2180], "parent": "chennai"},
+
+    # ── Hyderabad Wards ───────────────────────────────────────────────────
+    "hyderabad_hitech": {"name": "HITEC City", "state": "Telangana", "country": "India", "center": [17.4435, 78.3772], "parent": "hyderabad"},
+    "hyderabad_secunderabad": {"name": "Secunderabad", "state": "Telangana", "country": "India", "center": [17.4399, 78.4983], "parent": "hyderabad"},
+    "hyderabad_oldcity": {"name": "Old City / Charminar", "state": "Telangana", "country": "India", "center": [17.3616, 78.4747], "parent": "hyderabad"},
+    "hyderabad_kukatpally": {"name": "Kukatpally", "state": "Telangana", "country": "India", "center": [17.4849, 78.3961], "parent": "hyderabad"},
+    "hyderabad_lb_nagar": {"name": "LB Nagar", "state": "Telangana", "country": "India", "center": [17.3469, 78.5518], "parent": "hyderabad"},
+
+    # ── Kolkata Wards ─────────────────────────────────────────────────────
+    "kolkata_howrah": {"name": "Howrah", "state": "West Bengal", "country": "India", "center": [22.5958, 88.2636], "parent": "kolkata"},
+    "kolkata_dumdum": {"name": "Dum Dum", "state": "West Bengal", "country": "India", "center": [22.6427, 88.4032], "parent": "kolkata"},
+    "kolkata_newmarket": {"name": "New Market Area", "state": "West Bengal", "country": "India", "center": [22.5726, 88.3518], "parent": "kolkata"},
+    "kolkata_salt_lake": {"name": "Salt Lake (Bidhannagar)", "state": "West Bengal", "country": "India", "center": [22.5869, 88.4197], "parent": "kolkata"},
+    "kolkata_jadavpur": {"name": "Jadavpur", "state": "West Bengal", "country": "India", "center": [22.4993, 88.3706], "parent": "kolkata"},
+
 }
 
 DEFAULT_CITY = "delhi"
@@ -341,7 +391,25 @@ LIVE_CITIES = {
     "madurai", "visakhapatnam", "vijayawada", "nagpur", "nashik", "aurangabad", "surat", "vadodara", 
     "rajkot", "jodhpur", "udaipur", "kota", "amritsar", "ludhiana", "agra", "varanasi", "meerut", 
     "prayagraj", "dhanbad", "jamshedpur", "asansol", "siliguri", "gwalior", "jabalpur", "mysore", 
-    "mangalore", "kozhikode", "tirupati", "salem", "trichy", "rourkela", "pondicherry"
+    "mangalore", "kozhikode", "tirupati", "salem", "trichy", "rourkela", "pondicherry",
+    # Delhi wards
+    "delhi_connaught", "delhi_rohini", "delhi_dwarka", "delhi_shahdara", "delhi_anandvihar",
+    "delhi_nehruplace", "delhi_janakpuri", "delhi_kashmirigate", "delhi_okhla", "delhi_wazirpur",
+    # Mumbai wards
+    "mumbai_bandra", "mumbai_andheri", "mumbai_kurla", "mumbai_chembur", "mumbai_colaba",
+    "mumbai_borivali", "mumbai_worli",
+    # Bengaluru wards
+    "bengaluru_koramangala", "bengaluru_whitefield", "bengaluru_yelahanka",
+    "bengaluru_btm", "bengaluru_hebbal", "bengaluru_jayanagar",
+    # Chennai wards
+    "chennai_adyar", "chennai_aminjikarai", "chennai_manali",
+    "chennai_nungambakkam", "chennai_velachery",
+    # Hyderabad wards
+    "hyderabad_hitech", "hyderabad_secunderabad", "hyderabad_oldcity",
+    "hyderabad_kukatpally", "hyderabad_lb_nagar",
+    # Kolkata wards
+    "kolkata_howrah", "kolkata_dumdum", "kolkata_newmarket",
+    "kolkata_salt_lake", "kolkata_jadavpur",
 }
 
 
@@ -679,29 +747,15 @@ class SimulationEngine:
                         lat = CITIES[k]["center"][0]
                         lng = CITIES[k]["center"][1]
                         
-                        # No scaling applied so raw API values are used directly
+                        # Use real API values directly without adding simulated plume on top
+                        # (Gaussian plume dispersion would double-count emissions already captured by the sensor)
 
-                        # Calculate dynamic procedural wind for dispersion
+                        # Calculate procedural wind for wind display
                         h_seed = ts.hour + ts.minute // 10
                         rng_wind = random.Random(hash(f"{k}_{h_seed}"))
                         ws = rng_wind.uniform(1.5, 6.0)  # wind speed in m/s
                         wd = rng_wind.uniform(0.0, 360.0)  # wind direction in degrees
                         self._cache[f"wind_{k}"] = (ws, wd)
-
-                        # Add Gaussian plume dispersion from industrial sources
-                        sources = get_sources_for_city(k)
-                        disp_pm25 = 0.0
-                        disp_pm10 = 0.0
-                        for src in sources:
-                            if src["category"] == "industrial":
-                                C = self._calculate_plume_dispersion(
-                                    CITIES[k]["center"], src["location"], src["Q"], src["H"], ws, wd
-                                )
-                                disp_pm25 += C * 0.4
-                                disp_pm10 += C * 0.8
-                        
-                        pm25 = pm25 + disp_pm25
-                        pm10 = pm10 + disp_pm10
 
                         pollutants = {
                             "pm25": round(pm25, 1),
@@ -814,7 +868,8 @@ class SimulationEngine:
                 lat = city["center"][0]
                 lng = city["center"][1]
                 
-                # No scaling applied so raw API values are used directly
+                # Use real API values directly without adding simulated plume on top
+                # (Gaussian plume dispersion would double-count emissions already captured by the sensor)
 
                 # Calculate procedural wind
                 h_seed = ts.hour + ts.minute // 10
@@ -822,21 +877,6 @@ class SimulationEngine:
                 ws = rng_wind.uniform(1.5, 6.0)
                 wd = rng_wind.uniform(0.0, 360.0)
                 self._cache[f"wind_{city_key}"] = (ws, wd)
-
-                # Add Gaussian plume dispersion from industrial sources
-                sources = get_sources_for_city(city_key)
-                disp_pm25 = 0.0
-                disp_pm10 = 0.0
-                for src in sources:
-                    if src["category"] == "industrial":
-                        C = self._calculate_plume_dispersion(
-                            city["center"], src["location"], src["Q"], src["H"], ws, wd
-                        )
-                        disp_pm25 += C * 0.4
-                        disp_pm10 += C * 0.8
-                
-                pm25 += disp_pm25
-                pm10 += disp_pm10
 
                 pollutants = {
                     "pm25": round(pm25, 1),

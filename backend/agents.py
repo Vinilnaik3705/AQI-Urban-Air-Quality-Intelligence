@@ -51,16 +51,24 @@ class AttributionAgent:
         sources: List[Dict[str, Any]],
         readings: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        # Get pollutants from the nearest reading to adjust weights dynamically
+        # Get pollutants and weather from the nearest reading
         pollutants = None
+        weather = None
+        nearest_aqi = 0
+        city_name = ""
         if readings:
             try:
                 nearest_reading = min(readings, key=lambda r: _haversine(lat, lng, r["location"][0], r["location"][1]))
                 pollutants = nearest_reading.get("pollutants")
+                weather = nearest_reading.get("weather")
+                nearest_aqi = nearest_reading.get("aqi_in", nearest_reading.get("aqi", 0))
+                city_name = nearest_reading.get("sensor_id", "")
             except Exception:
                 pass
 
         boosts = {"industrial": 1.0, "vehicular": 1.0, "construction": 1.0, "waste_burning": 1.0}
+        pollutant_signals: Dict[str, Any] = {}
+
         if pollutants:
             pm25 = pollutants.get("pm25", 0.0)
             pm10 = pollutants.get("pm10", 0.0)
@@ -68,41 +76,99 @@ class AttributionAgent:
             so2 = pollutants.get("so2", 0.0)
             co = pollutants.get("co", 0.0)
 
-            # High NO2 (>40) or high CO (>1.0) indicates vehicular dominance
+            # High NO2 or CO → vehicular
             if no2 > 40.0 or co > 1.0:
                 boosts["vehicular"] += 1.5 * max(no2 / 40.0, co / 1.0)
-            
-            # High SO2 (>20) or high CO (>1.5) indicates industrial
+
+            # High SO2 or PM2.5+SO2 combo → industrial
             if so2 > 20.0:
                 boosts["industrial"] += 2.0 * (so2 / 20.0)
             elif pm25 > 50.0 and so2 > 10.0:
                 boosts["industrial"] += 1.5
 
-            # Construction/road dust is mostly PM10 (PM10/PM2.5 ratio > 1.8)
+            # High PM10/PM2.5 ratio → construction/road dust
             if pm25 > 0:
                 ratio = pm10 / pm25
                 if ratio > 1.8 and pm10 > 50.0:
                     boosts["construction"] += 1.5 * (ratio - 1.0)
-            
-            # Waste burning / crop burning results in high PM2.5 relative to PM10 (PM2.5/PM10 ratio > 0.6)
+
+            # High PM2.5/PM10 ratio → waste/crop burning
             if pm10 > 0:
                 ratio = pm25 / pm10
                 if ratio > 0.6 and pm25 > 60.0:
                     boosts["waste_burning"] += 1.8 * (ratio / 0.6)
 
+            # Build per-pollutant signal descriptions
+            if pm25 > 0:
+                if pm25 > 120:    level = "Hazardous"
+                elif pm25 > 60:   level = "Very High"
+                elif pm25 > 30:   level = "Elevated"
+                else:             level = "Moderate"
+                pollutant_signals["PM2.5"] = {"value": round(pm25, 1), "unit": "µg/m³", "level": level,
+                    "note": "Fine particles that penetrate deep into lungs. CPCB safe limit: 60 µg/m³ (24h avg)."}
+
+            if pm10 > 0:
+                if pm10 > 350:    level = "Hazardous"
+                elif pm10 > 150:  level = "Very High"
+                elif pm10 > 50:   level = "Elevated"
+                else:             level = "Moderate"
+                pollutant_signals["PM10"] = {"value": round(pm10, 1), "unit": "µg/m³", "level": level,
+                    "note": "Coarse dust (road dust, construction, soil). CPCB safe limit: 100 µg/m³."}
+
+            if no2 > 10:
+                if no2 > 180:     level = "Hazardous"
+                elif no2 > 80:    level = "Very High"
+                elif no2 > 40:    level = "Elevated"
+                else:             level = "Background"
+                pollutant_signals["NO₂"] = {"value": round(no2, 1), "unit": "µg/m³", "level": level,
+                    "note": "Nitrogen dioxide — mainly from vehicle exhaust and power plants."}
+
+            if so2 > 5:
+                if so2 > 380:     level = "Hazardous"
+                elif so2 > 80:    level = "Very High"
+                elif so2 > 40:    level = "Elevated"
+                else:             level = "Background"
+                pollutant_signals["SO₂"] = {"value": round(so2, 1), "unit": "µg/m³", "level": level,
+                    "note": "Sulphur dioxide — signature of coal combustion and industrial stacks."}
+
+            if co > 0.3:
+                co_ppm = co / 1.145  # rough mg/m³ → ppm
+                if co > 10:       level = "Hazardous"
+                elif co > 2:      level = "Very High"
+                elif co > 1:      level = "Elevated"
+                else:             level = "Background"
+                pollutant_signals["CO"] = {"value": round(co, 2), "unit": "mg/m³", "level": level,
+                    "note": "Carbon monoxide — incomplete combustion in traffic and burning."}
+
+        # ── Source attribution (inverse-distance weighting) ──
         contributions: Dict[str, float] = {}
         total_weight = 0.0
+        nearby_sources_detail: List[Dict[str, Any]] = []
 
         for source in sources:
             dist = _haversine(lat, lng, source["location"][0], source["location"][1])
-            if dist > 10:  # Beyond 10 km — no attribution
+            if dist > 10:
                 continue
             base_weight = 1.0 / max(dist, 0.1)
             weight = base_weight * boosts.get(source["category"], 1.0)
-            contributions[source["category"]] = (
-                contributions.get(source["category"], 0) + weight
-            )
+            contributions[source["category"]] = contributions.get(source["category"], 0) + weight
             total_weight += weight
+
+            # Collect nearby source detail for the "where it's coming from" section
+            nearby_sources_detail.append({
+                "id": source.get("id", ""),
+                "name": source["name"],
+                "category": source["category"],
+                "label": self.CATEGORY_LABELS.get(source["category"], source["category"].title()),
+                "distance_km": round(dist, 2),
+                "emission_rate_Q": source.get("Q", 0),
+                "stack_height_m": source.get("H", 0),
+                "weight_share": round(weight, 3),
+                "location": source["location"],
+            })
+
+        # Sort by weight contribution (highest impact first)
+        nearby_sources_detail.sort(key=lambda x: -x["weight_share"])
 
         if total_weight == 0:
             return {
@@ -110,7 +176,12 @@ class AttributionAgent:
                     {"category": "background", "label": "Background / Natural",
                      "percentage": 100, "confidence": 0.50}
                 ],
+                "nearby_sources": [],
+                "pollutant_signals": pollutant_signals,
+                "conditions": {},
+                "narrative": "No significant emission sources detected within 10 km. Air quality is influenced by regional background levels.",
                 "location": [lat, lng],
+                "aqi": nearest_aqi,
                 "timestamp": datetime.now().isoformat(),
             }
 
@@ -118,18 +189,122 @@ class AttributionAgent:
         for cat, w in sorted(contributions.items(), key=lambda x: -x[1]):
             pct = round((w / total_weight) * 100, 1)
             conf = round(min(0.95, 0.60 + (w / total_weight) * 0.35), 2)
-            result.append(
-                {
-                    "category": cat,
-                    "label": self.CATEGORY_LABELS.get(cat, cat.title()),
-                    "percentage": pct,
-                    "confidence": conf,
-                }
+            result.append({
+                "category": cat,
+                "label": self.CATEGORY_LABELS.get(cat, cat.title()),
+                "percentage": pct,
+                "confidence": conf,
+            })
+
+        # ── Atmospheric conditions that amplify/suppress pollution ──
+        ws_kmh = None
+        wd_deg = None
+        temp_c = None
+        if weather:
+            ws_kmh = weather.get("wind_speed_kmh")
+            wd_deg = weather.get("wind_direction_deg")
+            temp_c = weather.get("temperature_c")
+
+        # Estimate boundary layer / inversion from time of day
+        now = datetime.now()
+        hour = now.hour
+        angle = ((hour - 10) / 24) * 2 * math.pi
+        inversion_m = round(700 - 400 * math.cos(angle))
+        stagnant = ws_kmh is not None and ws_kmh < 8.0
+        low_inversion = inversion_m < 500
+
+        # Cardinal wind direction label
+        wd_label = ""
+        if wd_deg is not None:
+            dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"]
+            wd_label = dirs[round(wd_deg / 22.5) % 16]
+
+        conditions = {
+            "wind_speed_kmh": ws_kmh,
+            "wind_direction_deg": wd_deg,
+            "wind_direction_label": wd_label,
+            "temperature_c": temp_c,
+            "inversion_height_m": inversion_m,
+            "is_stagnant": stagnant,
+            "has_low_inversion": low_inversion,
+            "hour_of_day": hour,
+        }
+
+        # ── Plain-language narrative ──
+        dominant_cat = result[0]["category"] if result else "unknown"
+        dominant_pct = result[0]["percentage"] if result else 0
+        dominant_label = result[0]["label"] if result else "Unknown"
+        top_source = nearby_sources_detail[0] if nearby_sources_detail else None
+
+        narrative_parts = []
+
+        # Opening: what's driving it
+        if pollutants:
+            pm25 = pollutants.get("pm25", 0)
+            pm10 = pollutants.get("pm10", 0)
+            no2 = pollutants.get("no2", 0)
+            so2 = pollutants.get("so2", 0)
+
+            dominant_pollutant = "PM2.5" if pm25 >= pm10 else "PM10"
+            narrative_parts.append(
+                f"The dominant pollutant driving the AQI of {round(nearest_aqi)} is {dominant_pollutant} "
+                f"at {round(pm25 if dominant_pollutant == 'PM2.5' else pm10, 1)} µg/m³"
+                f"{' — well above the CPCB 24h safe limit' if (pm25 > 60 or pm10 > 100) else ''}."
             )
+
+        # Source attribution narrative
+        if top_source:
+            narrative_parts.append(
+                f"{dominant_label} accounts for {dominant_pct}% of local emissions. "
+                f"The highest-impact source is '{top_source['name']}' at {top_source['distance_km']} km "
+                f"({'directly upwind' if stagnant else 'nearby'})."
+            )
+            if len(nearby_sources_detail) > 1:
+                second = nearby_sources_detail[1]
+                narrative_parts.append(
+                    f"Secondary contributor: '{second['name']}' ({second['label']}, {second['distance_km']} km away) "
+                    f"adding {result[1]['percentage'] if len(result) > 1 else '~' }% to the total load."
+                )
+
+        # Atmospheric conditions
+        if stagnant and low_inversion:
+            narrative_parts.append(
+                f"Atmospheric conditions are severely unfavourable: wind speed is only {ws_kmh:.1f} km/h "
+                f"and the inversion layer is low at ~{inversion_m}m, trapping pollutants near the surface."
+            )
+        elif stagnant:
+            narrative_parts.append(
+                f"Low wind speed ({ws_kmh:.1f} km/h) is reducing dispersion, allowing pollutants to accumulate."
+            )
+        elif low_inversion:
+            narrative_parts.append(
+                f"A shallow boundary layer (~{inversion_m}m) is limiting vertical mixing despite adequate wind."
+            )
+        else:
+            if ws_kmh is not None:
+                narrative_parts.append(
+                    f"Wind at {ws_kmh:.1f} km/h from {wd_label} is providing moderate dispersion, "
+                    f"limiting further accumulation."
+                )
+
+        # Time-of-day context
+        if 6 <= hour <= 9:
+            narrative_parts.append("Morning rush hour is likely amplifying vehicular emissions.")
+        elif 17 <= hour <= 20:
+            narrative_parts.append("Evening traffic peak and dropping temperatures are worsening conditions.")
+        elif 22 <= hour or hour <= 5:
+            narrative_parts.append("Nighttime boundary layer compression is concentrating overnight emissions.")
+
+        narrative = " ".join(narrative_parts)
 
         return {
             "sources": result,
+            "nearby_sources": nearby_sources_detail[:6],  # top 6 closest sources
+            "pollutant_signals": pollutant_signals,
+            "conditions": conditions,
+            "narrative": narrative,
             "location": [lat, lng],
+            "aqi": nearest_aqi,
             "timestamp": datetime.now().isoformat(),
         }
 

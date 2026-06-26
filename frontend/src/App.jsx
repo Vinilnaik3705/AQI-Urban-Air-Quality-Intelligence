@@ -1468,24 +1468,41 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
 function AttributionView({ state, attribution, loading, onClickLocation, mapStyle, setMapStyle, onCitySelect }) {
   if (!state) return null
 
+  const SOURCE_ICONS = {
+    industrial:    '🏭',
+    vehicular:     '🚗',
+    construction:  '🏗️',
+    waste_burning: '🔥',
+    background:    '🌿',
+  }
+
+  const POLLUTANT_COLORS = {
+    'PM2.5': '#ef4444',
+    'PM10':  '#f97316',
+    'NO₂':   '#a855f7',
+    'SO₂':   '#eab308',
+    'CO':    '#64748b',
+  }
+
+  const LEVEL_COLORS = {
+    'Hazardous': '#991b1b',
+    'Very High':  '#ef4444',
+    'Elevated':   '#f97316',
+    'Moderate':   '#eab308',
+    'Background': '#22c55e',
+  }
+
   return (
     <div className="content-area">
       <div className="map-section">
         <MapContainer center={state.city.center} zoom={5} minZoom={4} maxBounds={[[6.0, 65.0], [38.0, 99.0]]} maxBoundsViscosity={1.0} scrollWheelZoom={true}>
           <MapLayersControl />
-          {/* City averages bubbles (All India mode) */}
           {state.city_averages && Object.entries(state.city_averages).map(([key, c]) => (
             <CircleMarker
               key={`city-attr-${key}`}
               center={c.center}
               radius={24}
-              pathOptions={{
-                fillColor: aqiColor(c.aqi),
-                fillOpacity: 0.4,
-                color: aqiColor(c.aqi),
-                weight: 2,
-                dashArray: '5 5'
-              }}
+              pathOptions={{ fillColor: aqiColor(c.aqi), fillOpacity: 0.4, color: aqiColor(c.aqi), weight: 2, dashArray: '5 5' }}
             />
           ))}
           {state.sensors.map(s => {
@@ -1496,15 +1513,8 @@ function AttributionView({ state, attribution, loading, onClickLocation, mapStyl
                 key={s.sensor_id}
                 center={s.location}
                 radius={Math.max(8, s.aqi / 12)}
-                pathOptions={{
-                  fillColor: aqiColor(s.aqi),
-                  fillOpacity: 0.7,
-                  color: aqiColor(s.aqi),
-                  weight: 2,
-                }}
-                eventHandlers={{
-                  click: () => onClickLocation(s.location[0], s.location[1]),
-                }}
+                pathOptions={{ fillColor: aqiColor(s.aqi), fillOpacity: 0.7, color: aqiColor(s.aqi), weight: 2 }}
+                eventHandlers={{ click: () => onClickLocation(s.location[0], s.location[1]) }}
               >
                 <Popup><strong>📍 {placeLabel}</strong> — AQI {s.aqi}</Popup>
               </CircleMarker>
@@ -1515,66 +1525,199 @@ function AttributionView({ state, attribution, loading, onClickLocation, mapStyl
               key={src.id}
               center={src.location}
               radius={6}
-              pathOptions={{
-                fillColor: SOURCE_COLORS[src.category] || '#888',
-                fillOpacity: 0.9,
-                color: '#fff',
-                weight: 1,
-              }}
+              pathOptions={{ fillColor: SOURCE_COLORS[src.category] || '#888', fillOpacity: 0.9, color: '#fff', weight: 1 }}
             >
-              <Popup>
-                <EmissionSourcePopup src={src} />
-              </Popup>
+              <Popup><EmissionSourcePopup src={src} /></Popup>
             </CircleMarker>
           ))}
         </MapContainer>
       </div>
 
-      <div className="right-panel">
-        <div className="card-title">Source Attribution Agent</div>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
-          Click any sensor on the map to identify pollution sources at that location.
-        </p>
+      <div className="right-panel" style={{ overflowY: 'auto' }}>
+        {/* Header */}
+        <div style={{ marginBottom: '12px' }}>
+          <div className="card-title" style={{ fontSize: '15px', fontWeight: '700', color: '#f1f5f9', marginBottom: '4px' }}>
+            🔍 Source Attribution Analysis
+          </div>
+          <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+            Click any sensor bubble on the map to run a deep attribution analysis for that location.
+          </p>
+        </div>
 
-        {loading && <div className="loading-state"><div className="spinner" /><span>Running agent…</span></div>}
-
-        {attribution && !loading && (
-          <div className="card">
-            <div className="card-title">Source Breakdown</div>
-            <div className="chart-container small">
-              <Doughnut
-                data={{
-                  labels: attribution.sources.map(s => s.label || s.category),
-                  datasets: [{
-                    data: attribution.sources.map(s => s.percentage),
-                    backgroundColor: attribution.sources.map(s => SOURCE_COLORS[s.category] || '#64748b'),
-                    borderWidth: 0,
-                  }],
-                }}
-                options={{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  cutout: '60%',
-                  plugins: {
-                    legend: { display: false },
-                  },
-                }}
-              />
-            </div>
-            {attribution.sources.map((s, i) => (
-              <div key={i} className="legend-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div className="legend-dot" style={{ background: SOURCE_COLORS[s.category] || '#64748b', width: '10px', height: '10px', borderRadius: '50%', display: 'inline-block' }} />
-                  <span style={{ fontSize: '13px', color: '#cbd5e1' }}>{s.label || s.category}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>(Confidence: {(s.confidence * 100).toFixed(0)}%)</span>
-                  <span className="legend-pct" style={{ fontWeight: '700', fontSize: '13px', color: '#f1f5f9' }}>{s.percentage}%</span>
-                </div>
-              </div>
-            ))}
+        {loading && (
+          <div className="loading-state" style={{ padding: '24px 0' }}>
+            <div className="spinner" />
+            <span style={{ fontSize: '13px', color: '#94a3b8' }}>Running attribution agent…</span>
           </div>
         )}
+
+        {!attribution && !loading && (
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: '#475569', fontSize: '13px' }}>
+            <div style={{ fontSize: '36px', marginBottom: '12px' }}>🗺️</div>
+            <div>Select a monitoring station on the map to analyse pollution sources at that location.</div>
+          </div>
+        )}
+
+        {attribution && !loading && (() => {
+          const cond = attribution.conditions || {}
+          const pollSigs = attribution.pollutant_signals || {}
+          const nearbySources = attribution.nearby_sources || []
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
+              {/* AQI Badge + location */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid #1e293b', borderRadius: '10px', padding: '12px 14px' }}>
+                <div style={{ fontSize: '38px', fontWeight: '800', color: aqiColor(attribution.aqi), lineHeight: 1 }}>
+                  {Math.round(attribution.aqi || 0)}
+                </div>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Current AQI</div>
+                  <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
+                    📍 {attribution.location?.[0]?.toFixed(4)}, {attribution.location?.[1]?.toFixed(4)}
+                  </div>
+                </div>
+                {cond.wind_speed_kmh != null && (
+                  <div style={{ marginLeft: 'auto', textAlign: 'right', fontSize: '12px', color: '#94a3b8' }}>
+                    <div>💨 {cond.wind_speed_kmh?.toFixed(1)} km/h {cond.wind_direction_label}</div>
+                    <div>🌡️ {cond.temperature_c != null ? `${cond.temperature_c}°C` : '—'}</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Narrative explanation */}
+              {attribution.narrative && (
+                <div style={{ background: 'rgba(56,189,248,0.06)', border: '1px solid rgba(56,189,248,0.15)', borderRadius: '10px', padding: '12px 14px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                    🧠 AI Attribution Analysis
+                  </div>
+                  <p style={{ fontSize: '13px', color: '#cbd5e1', lineHeight: '1.6', margin: 0 }}>
+                    {attribution.narrative}
+                  </p>
+                </div>
+              )}
+
+              {/* Atmospheric Conditions */}
+              {(cond.is_stagnant || cond.has_low_inversion) && (
+                <div style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '10px 14px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '16px' }}>⚠️</span>
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#fca5a5', marginBottom: '4px' }}>Unfavourable Atmospheric Conditions</div>
+                    <div style={{ fontSize: '12px', color: '#94a3b8', lineHeight: '1.5' }}>
+                      {cond.is_stagnant && <div>• Stagnant wind ({cond.wind_speed_kmh?.toFixed(1)} km/h) — pollutants not dispersing</div>}
+                      {cond.has_low_inversion && <div>• Low inversion layer at ~{cond.inversion_height_m}m — trapping pollution near ground</div>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Source breakdown donut + legend */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid #1e293b', borderRadius: '10px', padding: '14px' }}>
+                <div style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '12px' }}>
+                  📊 Source Breakdown
+                </div>
+                <div className="chart-container small">
+                  <Doughnut
+                    data={{
+                      labels: attribution.sources.map(s => s.label || s.category),
+                      datasets: [{
+                        data: attribution.sources.map(s => s.percentage),
+                        backgroundColor: attribution.sources.map(s => SOURCE_COLORS[s.category] || '#64748b'),
+                        borderWidth: 0,
+                      }],
+                    }}
+                    options={{ responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { display: false } } }}
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+                  {attribution.sources.map((s, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ background: SOURCE_COLORS[s.category] || '#64748b', width: '10px', height: '10px', borderRadius: '50%', flexShrink: 0 }} />
+                        <span style={{ fontSize: '13px', color: '#cbd5e1' }}>
+                          {SOURCE_ICONS[s.category] || '•'} {s.label || s.category}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '11px', color: '#475569' }}>conf. {(s.confidence * 100).toFixed(0)}%</span>
+                        <span style={{ fontWeight: '700', fontSize: '14px', color: '#f1f5f9', minWidth: '40px', textAlign: 'right' }}>{s.percentage}%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Pollutant signals */}
+              {Object.keys(pollSigs).length > 0 && (
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid #1e293b', borderRadius: '10px', padding: '14px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '12px' }}>
+                    🧪 Pollutant Signals
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {Object.entries(pollSigs).map(([name, sig]) => (
+                      <div key={name} style={{ borderLeft: `3px solid ${POLLUTANT_COLORS[name] || '#64748b'}`, paddingLeft: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f5f9' }}>{name}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '12px', color: '#94a3b8' }}>{sig.value} {sig.unit}</span>
+                            <span style={{ fontSize: '10px', fontWeight: '700', color: LEVEL_COLORS[sig.level] || '#94a3b8', background: `${LEVEL_COLORS[sig.level]}22`, padding: '1px 6px', borderRadius: '4px' }}>
+                              {sig.level}
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748b', lineHeight: '1.4' }}>{sig.note}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Individual source cards */}
+              {nearbySources.length > 0 && (
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid #1e293b', borderRadius: '10px', padding: '14px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '12px' }}>
+                    📍 Identified Emission Sources
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {nearbySources.map((src, i) => (
+                      <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '10px 12px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                        <div style={{ fontSize: '20px', flexShrink: 0, lineHeight: 1, marginTop: '1px' }}>
+                          {SOURCE_ICONS[src.category] || '📌'}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '13px', fontWeight: '600', color: '#f1f5f9', marginBottom: '3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {src.name}
+                          </div>
+                          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '11px', color: '#64748b' }}>
+                              📏 {src.distance_km} km away
+                            </span>
+                            {src.emission_rate_Q > 0 && (
+                              <span style={{ fontSize: '11px', color: '#64748b' }}>
+                                💨 Q: {src.emission_rate_Q} g/s
+                              </span>
+                            )}
+                            {src.stack_height_m > 0 && (
+                              <span style={{ fontSize: '11px', color: '#64748b' }}>
+                                🏭 Stack: {src.stack_height_m}m
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ flexShrink: 0 }}>
+                          <div style={{ background: SOURCE_COLORS[src.category] || '#64748b', borderRadius: '4px', padding: '2px 7px', fontSize: '10px', fontWeight: '700', color: '#fff', textTransform: 'capitalize' }}>
+                            {src.label}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+            </div>
+          )
+        })()}
       </div>
     </div>
   )

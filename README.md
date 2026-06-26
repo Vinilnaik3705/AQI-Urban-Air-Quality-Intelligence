@@ -1,3 +1,13 @@
+---
+title: AQI Urban Air Quality Intelligence
+emoji: 🌫️
+colorFrom: blue
+colorTo: purple
+sdk: docker
+pinned: false
+license: mit
+---
+
 # 🌫️ AQI Intervention Platform
 
 An AI-Powered Urban Air Quality Intelligence Platform built with a **FastAPI backend** (multi-agent intelligence layer + spatial data engine) and a **React/Vite frontend** (premium dark-mode command center dashboard).

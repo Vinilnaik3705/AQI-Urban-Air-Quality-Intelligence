@@ -186,88 +186,6 @@ def is_in_india(lat: float, lng: float) -> bool:
     return 8.0 <= lat <= 38.0 and 68.0 <= lng <= 98.0
 
 
-def calculate_us_aqi(pm25: float, pm10: float, no2: float, so2: float, co: float, o3: float) -> float:
-    """Calculate US EPA AQI using 2024 standard breakpoints."""
-    # pm25 (ug/m3) - 2024 revised US EPA breakpoints
-    pm25_bp = [
-        (0.0, 9.0, 0, 50),
-        (9.1, 35.0, 51, 100),
-        (35.1, 55.0, 101, 150),
-        (55.1, 125.0, 151, 200),
-        (125.1, 225.0, 201, 300),
-        (225.1, 325.0, 301, 400),
-        (325.1, 500.0, 401, 500)
-    ]
-    # pm10 (ug/m3)
-    pm10_bp = [
-        (0, 54, 0, 50),
-        (55, 154, 51, 100),
-        (155, 254, 101, 150),
-        (255, 354, 151, 200),
-        (355, 424, 201, 300),
-        (425, 504, 301, 400),
-        (505, 604, 401, 500)
-    ]
-    # no2 ppb (Open-Meteo NO2 in ug/m3 -> convert to ppb: NO2 ug/m3 / 1.88)
-    no2_ppb = no2 / 1.88
-    no2_bp = [
-        (0, 53, 0, 50),
-        (54, 100, 51, 100),
-        (101, 360, 101, 150),
-        (361, 649, 151, 200),
-        (650, 1249, 201, 300),
-        (1250, 1649, 301, 400),
-        (1650, 2049, 401, 500)
-    ]
-    # so2 ppb (Open-Meteo SO2 in ug/m3 -> convert to ppb: SO2 ug/m3 / 2.62)
-    so2_ppb = so2 / 2.62
-    so2_bp = [
-        (0, 35, 0, 50),
-        (36, 75, 51, 100),
-        (76, 185, 101, 150),
-        (186, 304, 151, 200),
-        (305, 604, 201, 300),
-        (605, 804, 301, 400),
-        (805, 1004, 401, 500)
-    ]
-    # co ppm (co in mg/m3 -> convert to ppm: co mg/m3 / 1.15)
-    co_ppm = co / 1.15
-    co_bp = [
-        (0.0, 4.4, 0, 50),
-        (4.5, 9.4, 51, 100),
-        (9.5, 12.4, 101, 150),
-        (12.5, 15.4, 151, 200),
-        (15.5, 30.4, 201, 300),
-        (30.5, 40.4, 301, 400),
-        (40.5, 50.4, 401, 500)
-    ]
-    # o3 ppb (Open-Meteo ozone in ug/m3 -> convert to ppb: ozone ug/m3 / 2.0)
-    o3_ppb = o3 / 2.0
-    o3_bp = [
-        (0, 54, 0, 50),
-        (55, 70, 51, 100),
-        (71, 85, 101, 150),
-        (86, 105, 151, 200),
-        (106, 200, 201, 300)
-    ]
-
-    indices = []
-    if pm25 > 0:
-        indices.append(_calculate_sub_index(pm25, pm25_bp))
-    if pm10 > 0:
-        indices.append(_calculate_sub_index(pm10, pm10_bp))
-    if no2_ppb > 0:
-        indices.append(_calculate_sub_index(no2_ppb, no2_bp))
-    if so2_ppb > 0:
-        indices.append(_calculate_sub_index(so2_ppb, so2_bp))
-    if co_ppm > 0:
-        indices.append(_calculate_sub_index(co_ppm, co_bp))
-    if o3_ppb > 0:
-        indices.append(_calculate_sub_index(o3_ppb, o3_bp))
-
-    return max(indices) if indices else 0.0
-
-
 LIVE_CITIES = {
     # Metros & major cities — all get direct live API calls
     "delhi", "mumbai", "kolkata", "bengaluru", "chennai", "hyderabad",
@@ -325,12 +243,12 @@ async def _fetch_real_aqi(lat: float, lng: float) -> Optional[Dict[str, Any]]:
             resp = await client.get(AQ_API_URL, params={
                 "latitude": lat,
                 "longitude": lng,
-                "current": "us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone",
+                "current": "pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone",
             })
             if resp.status_code == 200:
                 data = resp.json().get("current", {})
                 return {
-                    "aqi": data.get("us_aqi", 0),
+                    "aqi": data.get("pm2_5", 0),
                     "pm25": round(data.get("pm2_5", 0), 1),
                     "pm10": round(data.get("pm10", 0), 1),
                     "no2": round(data.get("nitrogen_dioxide", 0), 1),
@@ -379,15 +297,15 @@ async def _fetch_real_forecast(lat: float, lng: float, hours: int = 72) -> Optio
             resp = await client.get(AQ_API_URL, params={
                 "latitude": lat,
                 "longitude": lng,
-                "hourly": "us_aqi,pm2_5,pm10",
+                "hourly": "pm2_5,pm10",
                 "forecast_days": min(max(hours // 24, 1), 5),
             })
             if resp.status_code == 200:
                 data = resp.json().get("hourly", {})
                 times = data.get("time", [])
-                aqis = data.get("us_aqi", [])
+                pm25s = data.get("pm2_5", [])
                 return [
-                    {"timestamp": times[i], "aqi": aqis[i] or 0}
+                    {"timestamp": times[i], "aqi": pm25s[i] or 0}
                     for i in range(min(hours, len(times)))
                 ]
     except Exception:
@@ -592,7 +510,7 @@ class SimulationEngine:
                 params = {
                     "latitude": ",".join(batch_lats),
                     "longitude": ",".join(batch_lngs),
-                    "current": "us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone",
+                    "current": "pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone",
                 }
                 async with httpx.AsyncClient(timeout=25.0) as client:
                     resp = await client.get(url, params=params)
@@ -617,7 +535,6 @@ class SimulationEngine:
                                 "timestamp": ts.isoformat(),
                                 "aqi": 80.0,
                                 "aqi_in": 80.0,
-                                "aqi_us": 80.0,
                                 "pollutants": pollutants,
                                 "source": "estimation (fallback)"
                             }
@@ -655,10 +572,6 @@ class SimulationEngine:
                             pollutants["pm25"], pollutants["pm10"], pollutants["no2"],
                             pollutants["so2"], pollutants["co"], pollutants["o3"]
                         )
-                        aqi_us = calculate_us_aqi(
-                            pollutants["pm25"], pollutants["pm10"], pollutants["no2"],
-                            pollutants["so2"], pollutants["co"], pollutants["o3"]
-                        )
                         r_entry = {
                             "sensor_id": f"SENSOR_{k}",
                             "ward_id": k,
@@ -666,7 +579,6 @@ class SimulationEngine:
                             "timestamp": ts.isoformat(),
                             "aqi": round(aqi_in, 1),
                             "aqi_in": round(aqi_in, 1),
-                            "aqi_us": round(aqi_us, 1),
                             "pollutants": pollutants,
                             "source": "open-meteo (live)"
                         }
@@ -683,7 +595,6 @@ class SimulationEngine:
                         "timestamp": ts.isoformat(),
                         "aqi": 80.0,
                         "aqi_in": 80.0,
-                        "aqi_us": 80.0,
                         "pollutants": pollutants,
                         "source": "estimation (fallback)"
                     }
@@ -710,10 +621,6 @@ class SimulationEngine:
                         pollutants["pm25"], pollutants["pm10"], pollutants["no2"],
                         pollutants["so2"], pollutants["co"], pollutants["o3"]
                     )
-                    aqi_us = calculate_us_aqi(
-                        pollutants["pm25"], pollutants["pm10"], pollutants["no2"],
-                        pollutants["so2"], pollutants["co"], pollutants["o3"]
-                    )
                     readings.append({
                         "sensor_id": f"SENSOR_{k}",
                         "ward_id": k,
@@ -721,7 +628,6 @@ class SimulationEngine:
                         "timestamp": ts.isoformat(),
                         "aqi": round(aqi_in, 1),
                         "aqi_in": round(aqi_in, 1),
-                        "aqi_us": round(aqi_us, 1),
                         "pollutants": pollutants,
                         "source": f"nearest-neighbor fallback ({nearest_key})"
                     })
@@ -734,7 +640,6 @@ class SimulationEngine:
                         "timestamp": ts.isoformat(),
                         "aqi": 80.0,
                         "aqi_in": 80.0,
-                        "aqi_us": 80.0,
                         "pollutants": pollutants,
                         "source": "estimation (fallback)"
                     })
@@ -776,15 +681,10 @@ class SimulationEngine:
                     pollutants["pm25"], pollutants["pm10"], pollutants["no2"],
                     pollutants["so2"], pollutants["co"], pollutants["o3"]
                 )
-                aqi_us = calculate_us_aqi(
-                    pollutants["pm25"], pollutants["pm10"], pollutants["no2"],
-                    pollutants["so2"], pollutants["co"], pollutants["o3"]
-                )
                 source = "open-meteo (live)"
             else:
                 pollutants = {"pm25": 30.0, "pm10": 60.0, "no2": 25.0, "so2": 8.0, "co": 0.6, "o3": 45.0}
                 aqi_in = 80.0
-                aqi_us = 80.0
                 source = "estimation (fallback)"
 
             readings.append({
@@ -794,7 +694,6 @@ class SimulationEngine:
                 "timestamp": ts.isoformat(),
                 "aqi": round(aqi_in, 1),
                 "aqi_in": round(aqi_in, 1),
-                "aqi_us": round(aqi_us, 1),
                 "pollutants": pollutants,
                 "source": source
             })
@@ -883,10 +782,8 @@ class SimulationEngine:
                         co = (co_arr[h] or 0.0) / 1000.0
                         
                         aqi_in = calculate_indian_aqi(pm25, pm10, no2, so2, co, o3)
-                        aqi_us = calculate_us_aqi(pm25, pm10, no2, so2, co, o3)
                     else:
                         aqi_in = 80.0
-                        aqi_us = 80.0
                         
                     rng_wind = random.Random(hash(f"{k}_fc_{h}"))
                     ws = rng_wind.uniform(1.5, 6.0)
@@ -898,7 +795,6 @@ class SimulationEngine:
                         "ward_name": CITIES[k]["name"],
                         "center": CITIES[k]["center"],
                         "predicted_aqi": round(aqi_in, 1),
-                        "predicted_aqi_us": round(aqi_us, 1),
                         "confidence": confidence,
                         "wind_speed_kmh": round(ws * 3.6, 1),
                         "wind_direction_deg": round(wd, 1),
@@ -918,17 +814,14 @@ class SimulationEngine:
                     
                     if ref_w:
                         predicted_aqi = round(ref_w["predicted_aqi"] * (0.98 + 0.04 * rng_wind.random()), 1)
-                        predicted_aqi_us = round(ref_w["predicted_aqi_us"] * (0.98 + 0.04 * rng_wind.random()), 1)
                     else:
                         predicted_aqi = 80.0
-                        predicted_aqi_us = 80.0
                         
                     wards.append({
                         "ward_id": k,
                         "ward_name": CITIES[k]["name"],
                         "center": CITIES[k]["center"],
                         "predicted_aqi": predicted_aqi,
-                        "predicted_aqi_us": predicted_aqi_us,
                         "confidence": round(max(0.50, 0.90 - (h * 0.005)), 2),
                         "wind_speed_kmh": round(ws * 3.6, 1),
                         "wind_direction_deg": round(wd, 1),
@@ -954,7 +847,7 @@ class SimulationEngine:
                 resp = await client.get(AQ_API_URL, params={
                     "latitude": lat,
                     "longitude": lng,
-                    "hourly": "pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,ozone,carbon_monoxide,us_aqi",
+                    "hourly": "pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,ozone,carbon_monoxide",
                     "forecast_days": min(max(hours // 24, 1), 5),
                 })
                 if resp.status_code == 200:
@@ -985,7 +878,6 @@ class SimulationEngine:
                 co = co_raw / 1000.0  # µg/m³ → mg/m³
 
                 aqi_in = calculate_indian_aqi(pm25, pm10, no2, so2, co, o3)
-                aqi_us = calculate_us_aqi(pm25, pm10, no2, so2, co, o3)
 
                 rng_wind = random.Random(hash(f"{city_key}_fc_{h}"))
                 ws = rng_wind.uniform(1.5, 6.0)
@@ -1001,7 +893,6 @@ class SimulationEngine:
                         "ward_name": city["name"],
                         "center": city["center"],
                         "predicted_aqi": round(aqi_in, 1),
-                        "predicted_aqi_us": round(aqi_us, 1),
                         "confidence": confidence,
                         "wind_speed_kmh": round(ws * 3.6, 1),
                         "wind_direction_deg": round(wd, 1),
@@ -1050,7 +941,6 @@ class SimulationEngine:
             "center": city["center"],
             "current_aqi": readings[0]["aqi"],
             "aqi_in": readings[0].get("aqi_in", readings[0]["aqi"]),
-            "aqi_us": readings[0].get("aqi_us", readings[0]["aqi"]),
             "sensor_count": 1,
             "population": 10000000,
             "vulnerable": {"hospitals": 10, "schools": 50, "elderly_pct": 12}

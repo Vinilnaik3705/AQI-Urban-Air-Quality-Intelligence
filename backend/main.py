@@ -148,7 +148,6 @@ async def get_state(city: str = Query(default="all")):
                 "center": city_data["center"],
                 "current_aqi": r["aqi"],
                 "aqi_in": r.get("aqi_in", r["aqi"]),
-                "aqi_us": r.get("aqi_us", r["aqi"]),
                 "sensor_count": 1,
                 "population": 10000000,
                 "vulnerable": {"hospitals": 10, "schools": 50, "elderly_pct": 12}
@@ -168,7 +167,6 @@ async def get_state(city: str = Query(default="all")):
                 "center": city_data["center"],
                 "aqi": r["aqi"],
                 "aqi_in": r.get("aqi_in", r["aqi"]),
-                "aqi_us": r.get("aqi_us", r["aqi"]),
                 "weather": {"temperature_c": None, "wind_speed_kmh": None, "source": "unavailable"}
             }
 
@@ -289,18 +287,15 @@ async def get_forecast(
                 if w_id != lookup_key and ml_hour_data["open_meteo_raw"] > 0:
                     scale = own_open_meteo_raw / ml_hour_data["open_meteo_raw"]
                     scaled_aqi = round(ml_hour_data["predicted_aqi"] * scale, 1)
-                    scaled_aqi_us = round(ml_hour_data.get("predicted_aqi_us", ml_hour_data["predicted_aqi"]) * scale, 1)
                     scaled_low = round(ml_hour_data["confidence_low"] * scale, 1)
                     scaled_high = round(ml_hour_data["confidence_high"] * scale, 1)
                 else:
                     scaled_aqi = ml_hour_data["predicted_aqi"]
-                    scaled_aqi_us = ml_hour_data.get("predicted_aqi_us", ml_hour_data["predicted_aqi"])
                     scaled_low = ml_hour_data["confidence_low"]
                     scaled_high = ml_hour_data["confidence_high"]
 
                 # Update ward fields with ML data
                 w["predicted_aqi"] = scaled_aqi
-                w["predicted_aqi_us"] = scaled_aqi_us
                 w["confidence"] = ml_hour_data["confidence"]
                 w["confidence_low"] = max(0.0, scaled_low)
                 w["confidence_high"] = min(500.0, scaled_high)
@@ -511,7 +506,7 @@ async def get_aqi_details(
     state: str = ""
 ):
     """Fetch live AQI and weather details for any latitude and longitude and compute Indian AQI."""
-    from simulation import _fetch_real_aqi, _fetch_live_weather, calculate_indian_aqi, calculate_us_aqi, is_in_india
+    from simulation import _fetch_real_aqi, _fetch_live_weather, calculate_indian_aqi, is_in_india
     
     aqi_data = await _fetch_real_aqi(lat, lng)
     if not aqi_data:
@@ -541,16 +536,6 @@ async def get_aqi_details(
         aqi_data["o3"]
     )
     
-    # Calculate US AQI
-    aqi_us = calculate_us_aqi(
-        pm25,
-        pm10,
-        aqi_data["no2"],
-        aqi_data["so2"],
-        aqi_data["co"],
-        aqi_data["o3"]
-    )
-    
     weather = await _fetch_live_weather(lat, lng)
     if not weather:
         weather = {"temperature_c": None, "wind_speed_kmh": None}
@@ -563,7 +548,6 @@ async def get_aqi_details(
         "center": [lat, lng],
         "current_aqi": round(aqi_in, 1),
         "aqi_in": round(aqi_in, 1),
-        "aqi_us": round(aqi_us, 1),
         "weather": weather,
         "pollutants": {
             "pm25": round(pm25, 1),

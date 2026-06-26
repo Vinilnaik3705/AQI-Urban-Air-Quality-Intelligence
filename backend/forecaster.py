@@ -5,7 +5,7 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Tuple, Optional
 from sklearn.ensemble import GradientBoostingRegressor
-from simulation import CITIES, DEFAULT_CITY, LIVE_CITIES, calculate_indian_aqi, calculate_us_aqi
+from simulation import CITIES, DEFAULT_CITY, LIVE_CITIES, calculate_indian_aqi
 
 logger = logging.getLogger("AQIForecaster")
 
@@ -421,7 +421,6 @@ class AQIForecaster:
 
             # Calculate AQIs and cap at realistic ceiling
             predicted_aqi = min(calculate_indian_aqi(pred_pm25_val, pred_pm10_val, om_no2, om_so2, om_co, om_o3), 350.0)
-            predicted_aqi_us = min(calculate_us_aqi(pred_pm25_val, pred_pm10_val, om_no2, om_so2, om_co, om_o3), 300.0)
             open_meteo_raw_aqi = min(calculate_indian_aqi(om_pm25, om_pm10, om_no2, om_so2, om_co, om_o3), 350.0)
             
             confidence_val = max(0.30, 0.95 - (h * 0.007))
@@ -434,7 +433,6 @@ class AQIForecaster:
                 "timestamp": dt.isoformat(),
                 "hour_offset": h + 1,
                 "predicted_aqi": round(predicted_aqi, 1),
-                "predicted_aqi_us": round(predicted_aqi_us, 1),
                 "confidence_low": round(confidence_low, 1),
                 "confidence_high": round(confidence_high, 1),
                 "open_meteo_raw": round(open_meteo_raw_aqi, 1),

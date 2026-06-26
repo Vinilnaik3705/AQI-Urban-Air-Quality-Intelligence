@@ -176,7 +176,6 @@ export default function App() {
   const [state, setState] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selectedWard, setSelectedWard] = useState(null)
-  const [aqiStandard, setAqiStandard] = useState('US')
 
   // Map style state
   const [mapStyle, setMapStyle] = useState('voyager')
@@ -314,9 +313,9 @@ export default function App() {
   }
 
   const cityAqi = state
-    ? Math.round(state.sensors.reduce((s, r) => s + (aqiStandard === 'US' ? (r.aqi_us ?? r.aqi) : (r.aqi_in ?? r.aqi)), 0) / state.sensors.length)
+    ? Math.round(state.sensors.reduce((s, r) => s + (r.aqi_in ?? r.aqi), 0) / state.sensors.length)
     : 0
-  const alertCount = state ? state.sensors.filter(s => (aqiStandard === 'US' ? (s.aqi_us ?? s.aqi) : (s.aqi_in ?? s.aqi)) > (aqiStandard === 'US' ? 100 : 150)).length : 0
+  const alertCount = state ? state.sensors.filter(s => (s.aqi_in ?? s.aqi) > 150).length : 0
 
   return (
     <div className="app-shell">
@@ -344,8 +343,6 @@ export default function App() {
           alertCount={alertCount}
           weather={state?.weather}
           onSelectPlace={handleSelectPlace}
-          aqiStandard={aqiStandard}
-          onChangeStandard={setAqiStandard}
         />
 
         {tab === 'command' && (
@@ -358,7 +355,6 @@ export default function App() {
             customPlaces={customPlaces}
             targetCenter={targetCenter}
             targetZoom={targetZoom}
-            aqiStandard={aqiStandard}
           />
         )}
         {tab === 'forecast' && (
@@ -371,7 +367,6 @@ export default function App() {
             onSelectWard={handleSelectWard}
             mapStyle={mapStyle}
             setMapStyle={setMapStyle}
-            aqiStandard={aqiStandard}
           />
         )}
         {tab === 'attribution' && (
@@ -519,7 +514,7 @@ function HeaderSearch({ onSelectPlace }) {
 
 /* ── Header ────────────────────────────────────────────────────────────── */
 
-function Header({ tab, cityAqi, alertCount, weather, onSelectPlace, aqiStandard, onChangeStandard }) {
+function Header({ tab, cityAqi, alertCount, weather, onSelectPlace }) {
   const currentTab = TABS.find(t => t.id === tab)
   return (
     <header className="header">
@@ -532,26 +527,8 @@ function Header({ tab, cityAqi, alertCount, weather, onSelectPlace, aqiStandard,
           <HeaderSearch onSelectPlace={onSelectPlace} />
         </div>
         <div className="header-stat" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '8px' }}>
-          <span style={{ fontSize: '14px' }}>🇺🇸/🇮🇳</span>
-          <select 
-            value={aqiStandard} 
-            onChange={e => onChangeStandard(e.target.value)}
-            style={{ 
-              background: '#0f172a', 
-              color: '#f1f5f9', 
-              border: '1px solid #2e384e', 
-              borderRadius: '4px', 
-              padding: '2px 8px', 
-              fontSize: '12px', 
-              height: '32px',
-              cursor: 'pointer',
-              outline: 'none',
-              fontWeight: '600'
-            }}
-          >
-            <option value="US">AQI-US</option>
-            <option value="IN">AQI-IN</option>
-          </select>
+          <span style={{ fontSize: '14px' }}>🇮🇳</span>
+          <span style={{ fontSize: '12px', fontWeight: '600', color: '#f1f5f9', padding: '2px 8px', border: '1px solid #2e384e', borderRadius: '4px', height: '32px', display: 'flex', alignItems: 'center' }}>AQI-IN</span>
         </div>
         <div className="header-stat">
           <div className="status-dot live" />
@@ -783,7 +760,7 @@ function EmissionSourcePopup({ src }) {
 
 /* ── Command Center ────────────────────────────────────────────────────── */
 
-function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyle, customPlaces, targetCenter, targetZoom, aqiStandard }) {
+function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyle, customPlaces, targetCenter, targetZoom }) {
   if (!state) return null;
   return (
     <div className="content-area">
@@ -803,7 +780,7 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
           {state.sensors.map(s => {
             const ward = state.wards.find(w => w.id === s.ward_id)
             const placeLabel = ward ? ward.name : s.sensor_id
-            const aqiVal = aqiStandard === 'US' ? (s.aqi_us ?? s.aqi) : (s.aqi_in ?? s.aqi);
+            const aqiVal = s.aqi_in ?? s.aqi;
             const isWard = s.ward_id && s.ward_id.includes('_') && (
               s.ward_id.startsWith('delhi_') || s.ward_id.startsWith('mumbai_') ||
               s.ward_id.startsWith('bengaluru_') || s.ward_id.startsWith('chennai_') ||
@@ -832,7 +809,7 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
 
           {/* Custom Searched Places */}
           {customPlaces && customPlaces.map(cp => {
-            const aqiVal = aqiStandard === 'US' ? (cp.aqi_us ?? cp.current_aqi) : (cp.aqi_in ?? cp.current_aqi);
+            const aqiVal = cp.aqi_in ?? cp.current_aqi;
             return (
               <Marker
                 key={cp.id}
@@ -907,12 +884,12 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
             {/* Air Quality Index Label */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#94a3b8', marginBottom: '16px', borderTop: '1px solid #2e384e', paddingTop: '12px' }}>
               <span>📊</span>
-              <span>Air Quality Index ({aqiStandard === 'US' ? 'AQI-US' : 'AQI-IN'})</span>
+              <span>Air Quality Index (AQI-IN)</span>
             </div>
 
             {/* Large AQI and Badge */}
             {(() => {
-              const aqiVal = aqiStandard === 'US' ? (selectedWard.aqi_us ?? selectedWard.current_aqi) : (selectedWard.aqi_in ?? selectedWard.current_aqi);
+              const aqiVal = selectedWard.aqi_in ?? selectedWard.current_aqi;
               return (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
                   <span style={{ fontSize: '56px', fontWeight: '800', color: aqiColor(aqiVal), lineHeight: '1' }}>
@@ -1022,9 +999,7 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
 
 /* ── Forecast View ─────────────────────────────────────────────────────── */
 
-/* ── Forecast View ─────────────────────────────────────────────────────── */
-
-function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onSelectWard, mapStyle, setMapStyle, aqiStandard }) {
+function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onSelectWard, mapStyle, setMapStyle }) {
   const [selectedOffset, setSelectedOffset] = useState(0);
 
   if (!state) return null;
@@ -1049,7 +1024,7 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
   let timeLabel = "+0h (Projections)";
 
   if (selectedOffset === 0) {
-    const baseVal = currentWard ? Math.round(aqiStandard === 'IN' ? (currentWard.aqi_in ?? currentWard.current_aqi) : (currentWard.aqi_us ?? currentWard.current_aqi)) : 0;
+    const baseVal = currentWard ? Math.round(currentWard.aqi_in ?? currentWard.current_aqi) : 0;
     baselineAqi = baseVal;
     mitigatedAqi = baseVal;
     
@@ -1069,7 +1044,7 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
     // (that would show Delhi/first-city data for every city and make all graphs identical)
     const wForecast = entry?.wards?.find(w => w.ward_id === forecastWardId) ?? null;
     
-    baselineAqi = wForecast ? Math.round(aqiStandard === 'US' ? (wForecast.predicted_aqi_us ?? wForecast.predicted_aqi) : wForecast.predicted_aqi) : 0;
+    baselineAqi = wForecast ? Math.round(wForecast.predicted_aqi) : 0;
     mitigatedAqi = getMitigatedVal(baselineAqi, selectedOffset);
     
     const wsKmh = wForecast?.wind_speed_kmh || 12.6;
@@ -1093,7 +1068,7 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
 
   // +0h
   chartLabels.push('+0h');
-  const base0 = currentWard ? Math.round(aqiStandard === 'IN' ? (currentWard.aqi_in ?? currentWard.current_aqi) : (currentWard.aqi_us ?? currentWard.current_aqi)) : 0;
+  const base0 = currentWard ? Math.round(currentWard.aqi_in ?? currentWard.current_aqi) : 0;
   baselineDataset.push(base0);
   mitigatedDataset.push(base0);
   openMeteoDataset.push(base0);
@@ -1107,7 +1082,7 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
       chartLabels.push(`+${f.hour_offset}h`);
       // Strict ward match using forecastWardId — preserves original ward key
       const wForecast = f.wards?.find(w => w.ward_id === forecastWardId) ?? null;
-      const baseVal = wForecast ? Math.round(aqiStandard === 'US' ? (wForecast.predicted_aqi_us ?? wForecast.predicted_aqi) : wForecast.predicted_aqi) : 0;
+      const baseVal = wForecast ? Math.round(wForecast.predicted_aqi) : 0;
       baselineDataset.push(baseVal);
       mitigatedDataset.push(getMitigatedVal(baseVal, f.hour_offset));
 
@@ -1156,7 +1131,7 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
                 w.ward_id.startsWith('bengaluru_') || w.ward_id.startsWith('chennai_') ||
                 w.ward_id.startsWith('hyderabad_') || w.ward_id.startsWith('kolkata_')
               );
-              const forecastAqi = aqiStandard === 'US' ? (w.predicted_aqi_us ?? w.predicted_aqi) : w.predicted_aqi;
+              const forecastAqi = w.predicted_aqi;
               return (
               <Marker
                 key={w.ward_id}

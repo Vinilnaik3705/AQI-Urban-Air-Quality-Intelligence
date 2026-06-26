@@ -1054,7 +1054,9 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
   } else if (forecast && forecast.length > 0) {
     const entryIndex = Math.min(selectedOffset - 1, forecast.length - 1);
     const entry = forecast[entryIndex];
-    const wForecast = entry?.wards?.find(w => w.ward_id === currentWard?.id) || entry?.wards?.[0];
+    // Only use the ward that exactly matches the selected city — never fall back to [0]
+    // (that would show Delhi/first-city data for every city and make all graphs identical)
+    const wForecast = entry?.wards?.find(w => w.ward_id === currentWard?.id) ?? null;
     
     baselineAqi = wForecast ? Math.round(aqiStandard === 'US' ? (wForecast.predicted_aqi_us ?? wForecast.predicted_aqi) : wForecast.predicted_aqi) : 0;
     mitigatedAqi = getMitigatedVal(baselineAqi, selectedOffset);
@@ -1092,7 +1094,8 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
   if (forecast) {
     forecast.forEach((f, idx) => {
       chartLabels.push(`+${f.hour_offset}h`);
-      const wForecast = f.wards?.find(w => w.ward_id === currentWard?.id) || f.wards?.[0];
+      // Strict ward match — never fall back to [0] which would show the wrong city's data
+      const wForecast = f.wards?.find(w => w.ward_id === currentWard?.id) ?? null;
       const baseVal = wForecast ? Math.round(aqiStandard === 'US' ? (wForecast.predicted_aqi_us ?? wForecast.predicted_aqi) : wForecast.predicted_aqi) : 0;
       baselineDataset.push(baseVal);
       mitigatedDataset.push(getMitigatedVal(baseVal, f.hour_offset));
@@ -1115,9 +1118,9 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
 
   const snapshot = forecast ? forecast[Math.min(hours - 1, forecast.length - 1)] : null;
 
-  // Extract ML metadata
+  // Extract ML metadata — strict ward match only
   const firstEntry = forecast?.[0];
-  const firstWForecast = firstEntry?.wards?.find(w => w.ward_id === currentWard?.id) || firstEntry?.wards?.[0];
+  const firstWForecast = firstEntry?.wards?.find(w => w.ward_id === currentWard?.id) ?? null;
   const accuracy = firstWForecast?.accuracy;
   const anomalies = firstWForecast?.anomalies || [];
   const modelType = firstWForecast?.model_type || "default";

@@ -55,15 +55,25 @@ forecaster = AQIForecaster()
 
 @app.on_event("startup")
 async def startup_event():
-    # Pre-train top cities in the background to avoid blocking server start
-    TOP_CITIES = ["delhi", "mumbai", "kolkata", "bengaluru", "chennai", "hyderabad", "pune", "ahmedabad", "jaipur", "lucknow"]
+    # Pre-train ALL live cities in the background — each city uses its own lat/lng so
+    # models are genuinely city-specific (different historical pollution + weather patterns).
+    from simulation import LIVE_CITIES
+    # Only train top-level cities (not ward sub-localities) to keep startup fast.
+    # Ward sub-localities share coordinates close to parent city, so parent model is representative.
+    PARENT_CITIES = [k for k in LIVE_CITIES if "_" not in k]
+
     async def train_all():
-        for city in TOP_CITIES:
-            try:
-                await forecaster.train_for_city(city)
-            except Exception as e:
-                import logging
-                logging.getLogger("main").error(f"Error training startup model for {city}: {e}")
+        import logging
+        log = logging.getLogger("main")
+        # Train in small concurrent batches so startup isn't serialized
+        batch_size = 5
+        for i in range(0, len(PARENT_CITIES), batch_size):
+            batch = PARENT_CITIES[i:i + batch_size]
+            tasks = [forecaster.train_for_city(city) for city in batch]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for city, res in zip(batch, results):
+                if isinstance(res, Exception):
+                    log.error(f"Error training startup model for {city}: {res}")
     asyncio.create_task(train_all())
 
 
@@ -203,12 +213,14 @@ async def get_forecast(
     # 1. Fetch raw forecast grid for all cities
     raw_forecast = await sim.generate_forecast(city, hours)
     
-    # 2. Get list of cities to override
-    TOP_CITIES = ["delhi", "mumbai", "kolkata", "bengaluru", "chennai", "hyderabad", "pune", "ahmedabad", "jaipur", "lucknow"]
-    cities_to_process = [city] if city != "all" else TOP_CITIES
-    
-    # Filter cities to process that are in CITIES keys
-    cities_to_process = [c for c in cities_to_process if c in CITIES]
+    # 2. Build the list of cities to generate ML forecasts for.
+    # For "all" mode, use every top-level city in LIVE_CITIES (no ward sub-localities —
+    # they share coordinates with their parent so the parent model covers them).
+    from simulation import LIVE_CITIES
+    if city == "all":
+        cities_to_process = [k for k in LIVE_CITIES if "_" not in k and k in CITIES]
+    else:
+        cities_to_process = [city] if city in CITIES else []
     
     if not cities_to_process:
         return raw_forecast
@@ -250,25 +262,55 @@ async def get_forecast(
         
         for w in entry.get("wards", []):
             w_id = w["ward_id"]
-            if w_id in ml_forecasts:
-                ml_f = ml_forecasts[w_id]
-                grid_len = len(ml_f["grid"])
-                if h_idx < grid_len:
-                    ml_hour_data = ml_f["grid"][h_idx]
-                    
-                    # Update ward fields with ML data
-                    w["predicted_aqi"] = ml_hour_data["predicted_aqi"]
-                    w["predicted_aqi_us"] = ml_hour_data.get("predicted_aqi_us", ml_hour_data["predicted_aqi"])
-                    w["confidence"] = ml_hour_data["confidence"]
-                    w["confidence_low"] = ml_hour_data["confidence_low"]
-                    w["confidence_high"] = ml_hour_data["confidence_high"]
-                    w["open_meteo_raw"] = ml_hour_data["open_meteo_raw"]
-                    w["persistence_baseline"] = ml_hour_data["persistence_baseline"]
-                    
-                    # Attach metrics and anomalies (attached to the ward object so it is visible to front-end for that city)
-                    w["accuracy"] = ml_f["accuracy"]
-                    w["anomalies"] = ml_f["anomalies"]
-                    w["model_type"] = ml_f["model_type"]
+
+            # For a top-level city, look up its ML forecast directly.
+            # For a ward sub-locality (e.g. "delhi_rohini"), use the parent city's ML model
+            # but apply the ward's own Open-Meteo raw AQI as the open_meteo_raw value.
+            lookup_key = w_id
+            if w_id not in ml_forecasts:
+                # Try parent city (first segment before "_")
+                parent_key = w_id.split("_")[0]
+                if parent_key in ml_forecasts:
+                    lookup_key = parent_key
+                else:
+                    continue  # No ML data available for this ward
+
+            ml_f = ml_forecasts[lookup_key]
+            grid_len = len(ml_f["grid"])
+            if h_idx < grid_len:
+                ml_hour_data = ml_f["grid"][h_idx]
+                
+                # If it's a sub-locality, use the ward's own raw Open-Meteo AQI
+                # (already populated by generate_forecast) as open_meteo_raw so lines diverge.
+                own_open_meteo_raw = w.get("predicted_aqi", ml_hour_data["open_meteo_raw"])
+
+                # For sub-localities: scale the parent ML prediction by the ratio of the
+                # ward's own raw AQI to the parent's raw AQI, preserving genuine local differences.
+                if w_id != lookup_key and ml_hour_data["open_meteo_raw"] > 0:
+                    scale = own_open_meteo_raw / ml_hour_data["open_meteo_raw"]
+                    scaled_aqi = round(ml_hour_data["predicted_aqi"] * scale, 1)
+                    scaled_aqi_us = round(ml_hour_data.get("predicted_aqi_us", ml_hour_data["predicted_aqi"]) * scale, 1)
+                    scaled_low = round(ml_hour_data["confidence_low"] * scale, 1)
+                    scaled_high = round(ml_hour_data["confidence_high"] * scale, 1)
+                else:
+                    scaled_aqi = ml_hour_data["predicted_aqi"]
+                    scaled_aqi_us = ml_hour_data.get("predicted_aqi_us", ml_hour_data["predicted_aqi"])
+                    scaled_low = ml_hour_data["confidence_low"]
+                    scaled_high = ml_hour_data["confidence_high"]
+
+                # Update ward fields with ML data
+                w["predicted_aqi"] = scaled_aqi
+                w["predicted_aqi_us"] = scaled_aqi_us
+                w["confidence"] = ml_hour_data["confidence"]
+                w["confidence_low"] = max(0.0, scaled_low)
+                w["confidence_high"] = min(500.0, scaled_high)
+                w["open_meteo_raw"] = round(own_open_meteo_raw, 1)
+                w["persistence_baseline"] = ml_hour_data["persistence_baseline"]
+                
+                # Attach metrics and anomalies
+                w["accuracy"] = ml_f["accuracy"]
+                w["anomalies"] = ml_f["anomalies"]
+                w["model_type"] = ml_f["model_type"]
 
     return raw_forecast
 

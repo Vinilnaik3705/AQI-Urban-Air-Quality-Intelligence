@@ -13,8 +13,11 @@ import asyncio
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
+import os
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from simulation import SimulationEngine, CITIES, DEFAULT_CITY, get_sources_for_city
 from agents import (
@@ -424,4 +427,25 @@ async def get_aqi_details(
             "o3": aqi_data["o3"]
         }
     }
+
+# Serve static React frontend files from the built dist folder
+frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/dist"))
+if os.path.exists(frontend_dist):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+
+@app.get("/")
+def serve_home():
+    index_file = os.path.join(frontend_dist, "index.html")
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+    return {"message": "AQI Intervention Platform Backend Running. Build frontend to view dashboard."}
+
+@app.get("/{catchall:path}")
+def serve_static(catchall: str):
+    if catchall.startswith("api/") or catchall.startswith("docs") or catchall.startswith("openapi.json"):
+        return None
+    index_file = os.path.join(frontend_dist, "index.html")
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+    return {"message": "Not Found"}
 

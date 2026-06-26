@@ -28,7 +28,7 @@ ChartJS.register(
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
 
-const API = 'http://localhost:8000'
+const API = window.location.origin
 
 const MAP_STYLES = {
   voyager: {
@@ -723,11 +723,13 @@ function EmissionSourcePopup({ src }) {
               <span>● LIVE CCTV FEED</span>
               <span>CONFIRMED</span>
             </div>
-            <img 
-              src="/cctv_waste_burning.png" 
-              alt="CCTV Waste Burning Plume" 
-              style={{ width: '100%', height: '120px', objectFit: 'cover', display: 'block' }}
-            />
+            <div style={{ width: '100%', height: '120px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#94a3b8', fontSize: '11px', gap: '8px' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#ef4444' }}>
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+              <span style={{ fontWeight: '500', letterSpacing: '0.05em' }}>[ CCTV FEED ACTIVE ]</span>
+            </div>
           </div>
         )}
 

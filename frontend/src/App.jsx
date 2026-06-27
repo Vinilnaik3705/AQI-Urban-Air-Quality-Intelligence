@@ -292,6 +292,42 @@ export default function App() {
     : 0
   const alertCount = dispatches ? dispatches.total_hotspots : 0
 
+  const isRankingView = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'ranking';
+
+  if (isRankingView && state) {
+    return (
+      <div className="app-shell">
+        <Header
+          tab={tab}
+          setTab={setTab}
+          cityAqi={cityAqi}
+          alertCount={alertCount}
+          weather={state?.weather}
+          onSelectPlace={handleSelectPlace}
+        />
+        <div className="main-content" style={{ display: 'flex', flexDirection: 'column', flex: 1, padding: '24px 48px' }}>
+          <div className="title-section">
+            <h1 className="main-title">Live Air Quality Map</h1>
+            <p className="subtitle">Real-time air quality ranking of major Indian cities.</p>
+          </div>
+          <CommandCenter
+            state={state}
+            selectedWard={selectedWard}
+            onSelectWard={handleSelectWard}
+            mapStyle={mapStyle}
+            setMapStyle={setMapStyle}
+            customPlaces={customPlaces}
+            targetCenter={targetCenter}
+            targetZoom={targetZoom}
+            setTab={setTab}
+            onSelectPlace={handleSelectPlace}
+            forceMaximized={true}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
       <Header
@@ -630,14 +666,14 @@ function EmissionSourcePopup({ src }) {
 
 /* ── Command Center ────────────────────────────────────────────────────── */
 
-function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyle, customPlaces, targetCenter, targetZoom, setTab, onSelectPlace }) {
+function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyle, customPlaces, targetCenter, targetZoom, setTab, onSelectPlace, forceMaximized = false }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
   const [showDropdown, setShowDropdown] = useState(false)
   const dropdownRef = useRef(null)
 
   // Maximize / Ranking List Toggle
-  const [isMaximized, setIsMaximized] = useState(true)
+  const [isMaximized, setIsMaximized] = useState(forceMaximized)
 
   // Floating Map Overlays State
   const [showStations, setShowStations] = useState(true)
@@ -934,31 +970,6 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
               noWrap={true}
             />
 
-            {/* WAQI Real-time Air Quality Heatmap Layer */}
-            <TileLayer
-              attribution='Air Quality &copy; <a href="https://waqi.info">WAQI</a>'
-              url="https://tiles.waqi.info/tiles/usepa-aqi/{z}/{x}/{y}.png?token=demo"
-            />
-
-            {/* Geothermal Heatmap circles */}
-            {state.sensors.map(s => {
-              const aqiVal = s.aqi_in ?? s.aqi;
-              return (
-                <CircleMarker
-                  key={`heat-${s.sensor_id}`}
-                  center={s.location}
-                  radius={70}
-                  pathOptions={{
-                    fillColor: getGeothermalColor(aqiVal),
-                    fillOpacity: 0.16,
-                    color: 'transparent',
-                    weight: 0
-                  }}
-                  interactive={false}
-                />
-              )
-            })}
-
             {/* Preset City Markers (Toggled by Stations) */}
             {showStations && state.sensors.map(s => {
               const ward = state.wards.find(w => w.id === s.ward_id)
@@ -1050,11 +1061,17 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
           {/* Floating Maximize/Minimize Toggle button */}
           <button 
             className="map-maximize-btn" 
-            onClick={() => setIsMaximized(!isMaximized)}
-            title={isMaximized ? "Restore view" : "Maximize ranking map"}
+            onClick={() => {
+              if (forceMaximized) {
+                window.close();
+              } else {
+                window.open('?view=ranking', '_blank');
+              }
+            }}
+            title={forceMaximized ? "Close ranking page" : "Maximize ranking map"}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              {isMaximized ? (
+              {forceMaximized ? (
                 <>
                   <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7" />
                 </>

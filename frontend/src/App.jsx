@@ -145,7 +145,6 @@ const TABS = [
   { id: 'forecast',    icon: ICONS.forecast,    label: 'Forecasts' },
   { id: 'attribution', icon: ICONS.attribution, label: 'Source Analysis' },
   { id: 'enforcement', icon: ICONS.enforcement, label: 'Enforcement' },
-  { id: 'citizens',    icon: ICONS.citizens,    label: 'Citizens' },
   { id: 'analytics',   icon: ICONS.analytics,   label: 'Analytics' },
 ]
 
@@ -200,6 +199,7 @@ export default function App() {
   // Advisory state
   const [advisory, setAdvisory] = useState(null)
   const [advLang, setAdvLang] = useState('en')
+  const [isAdvisoryOpen, setIsAdvisoryOpen] = useState(false)
 
   // ── Data Fetching ────────────────────────────────────────────────────
 
@@ -258,8 +258,8 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (tab === 'citizens' && selectedWard) loadAdvisory(selectedWard.id, advLang)
-  }, [tab, selectedWard, advLang, loadAdvisory])
+    if (isAdvisoryOpen && selectedWard) loadAdvisory(selectedWard.id, advLang)
+  }, [isAdvisoryOpen, selectedWard, advLang, loadAdvisory])
 
   const handleSelectPlace = async (place) => {
     const data = await fetchJSON(`/api/aqi-details?lat=${place.lat}&lng=${place.lng}&name=${encodeURIComponent(place.name)}&country=${encodeURIComponent(place.country)}&state=${encodeURIComponent(place.state)}`)
@@ -387,20 +387,22 @@ export default function App() {
             onViewEvidence={setEvidenceModal}
           />
         )}
-        {tab === 'citizens' && (
-          <CitizensView
-            state={state}
-            advisory={advisory}
-            lang={advLang}
-            onChangeLang={setAdvLang}
-            selectedWard={selectedWard}
-            onSelectWard={(w) => { handleSelectWard(w); loadAdvisory(w.id, advLang) }}
-          />
-        )}
         {tab === 'analytics' && (
           <AnalyticsView state={state} />
         )}
       </div>
+
+      {/* ── Citizens Health Advisory Floating Widget ─────────────────── */}
+      <CitizensAdvisoryPopup
+        state={state}
+        advisory={advisory}
+        lang={advLang}
+        onChangeLang={setAdvLang}
+        selectedWard={selectedWard}
+        onSelectWard={(w) => { handleSelectWard(w); loadAdvisory(w.id, advLang) }}
+        isOpen={isAdvisoryOpen}
+        onToggle={() => setIsAdvisoryOpen(!isAdvisoryOpen)}
+      />
 
       {/* ── Evidence Modal ───────────────────────────────────────────── */}
       {evidenceModal && (
@@ -1965,139 +1967,168 @@ function EnforcementView({ dispatches, onRefresh, onViewEvidence }) {
   )
 }
 
-/* ── Citizens View ─────────────────────────────────────────────────────── */
+/* ── Citizens Advisory Popup ───────────────────────────────────────────── */
 
-function CitizensView({ state, advisory, lang, onChangeLang, selectedWard, onSelectWard }) {
+function CitizensAdvisoryPopup({ state, advisory, lang, onChangeLang, selectedWard, onSelectWard, isOpen, onToggle }) {
   if (!state) return null
 
   return (
-    <div className="panel-full">
-      <div className="panel-header">
-        <div>
-          <div className="panel-title">👥 Citizen Health Advisory Portal</div>
-          <div className="panel-subtitle">
-            Auto-generated, multi-lingual advisories based on real-time AQI predictions
-          </div>
-        </div>
-      </div>
+    <div className="advisory-widget-container">
+      {/* Floating Trigger Button */}
+      <button 
+        className={`advisory-trigger-btn ${isOpen ? 'open' : ''}`}
+        onClick={onToggle}
+        title="Citizen Health Advisory Portal"
+      >
+        {isOpen ? (
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        ) : (
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          </svg>
+        )}
+      </button>
 
-      <div className="panel-grid">
-        {/* Controls */}
-        <div className="card">
-          <div className="card-title">Configure Advisory</div>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 13, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
-              Select Ward
-            </label>
-            <select
-              id="select-ward"
-              className="select-field"
-              value={selectedWard?.id || ''}
-              onChange={e => {
-                const ward = state.wards.find(w => w.id === e.target.value)
-                if (ward) onSelectWard(ward)
-              }}
-            >
-              {state.wards.map(w => (
-                <option key={w.id} value={w.id}>
-                  {w.name} — AQI {Math.round(w.current_aqi)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label style={{ fontSize: 13, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
-              Language
-            </label>
-            <select
-              id="select-language"
-              className="select-field"
-              value={lang}
-              onChange={e => onChangeLang(e.target.value)}
-            >
-              {LANGUAGES.map(l => (
-                <option key={l.code} value={l.code}>{l.label}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Vulnerability chips */}
-          {advisory && advisory.vulnerable_info && (
-            <>
-              <div className="card-title" style={{ marginTop: 20 }}>Vulnerability Profile</div>
-              <div className="chip-row">
-                <div className="chip">
-                  <span className="chip-icon">🏥</span>
-                  {advisory.vulnerable_info.hospitals} Hospitals
-                </div>
-                <div className="chip">
-                  <span className="chip-icon">🏫</span>
-                  {advisory.vulnerable_info.schools} Schools
-                </div>
-                <div className="chip">
-                  <span className="chip-icon">👴</span>
-                  {advisory.vulnerable_info.elderly_pct}% Elderly
-                </div>
+      {/* Floating Popup Card */}
+      {isOpen && (
+        <div className="advisory-popup-card">
+          <div className="advisory-popup-header">
+            <div>
+              <div className="advisory-popup-title">
+                <span>👥 Health Advisory Portal</span>
               </div>
-            </>
+              <div className="advisory-popup-subtitle">
+                Auto-generated, multi-lingual advisories based on prediction
+              </div>
+            </div>
+            <button className="advisory-close-btn" onClick={onToggle}>&times;</button>
+          </div>
+
+          {/* Controls */}
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                Select Ward
+              </label>
+              <select
+                id="select-ward"
+                className="select-field"
+                style={{ width: '100%', padding: '6px 8px', fontSize: 13 }}
+                value={selectedWard?.id || ''}
+                onChange={e => {
+                  const ward = state.wards.find(w => w.id === e.target.value)
+                  if (ward) onSelectWard(ward)
+                }}
+              >
+                {state.wards.map(w => (
+                  <option key={w.id} value={w.id}>
+                    {w.name} (AQI {Math.round(w.current_aqi)})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ width: '120px' }}>
+              <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                Language
+              </label>
+              <select
+                id="select-language"
+                className="select-field"
+                style={{ width: '100%', padding: '6px 8px', fontSize: 13 }}
+                value={lang}
+                onChange={e => onChangeLang(e.target.value)}
+              >
+                {LANGUAGES.map(l => (
+                  <option key={l.code} value={l.code}>{l.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Advisory output */}
+          {advisory ? (
+            <div className={`advisory-card level-${advisory.level}`} style={{ padding: '16px', margin: 0, borderRadius: 'var(--radius-md)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    {advisory.ward_name} · {advisory.language}
+                  </div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: aqiColor(advisory.aqi), marginTop: 2 }}>
+                    AQI {Math.round(advisory.aqi)}
+                  </div>
+                </div>
+                <span className={`aqi-badge ${advisory.level}`} style={{ fontSize: 11, padding: '2px 8px' }}>
+                  {advisory.level.replace('_', ' ')}
+                </span>
+              </div>
+              <div className="advisory-text" style={{ fontSize: 14, margin: '12px 0', lineHeight: 1.5 }}>
+                {advisory.advisory}
+              </div>
+              
+              {/* Driver Analysis Section */}
+              {advisory.reason && (
+                <div style={{ 
+                  marginTop: '12px', 
+                  padding: '10px 12px', 
+                  background: 'rgba(255,255,255,0.03)', 
+                  borderRadius: '6px', 
+                  fontSize: '12px', 
+                  borderLeft: `3px solid ${aqiColor(advisory.aqi)}`,
+                  color: '#e2e8f0',
+                  lineHeight: '1.4'
+                }}>
+                  <strong style={{ color: '#f1f5f9', display: 'block', marginBottom: '2px' }}>
+                    🔍 Driver Analysis:
+                  </strong>
+                  {advisory.reason}
+                </div>
+              )}
+
+              {advisory.precautions.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div className="card-title" style={{ fontSize: 11, marginBottom: 6 }}>Precautions</div>
+                  <ul className="precaution-list" style={{ fontSize: 13, gap: 4, display: 'flex', flexDirection: 'column' }}>
+                    {advisory.precautions.map((p, i) => (
+                      <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                        <span style={{ color: 'var(--accent-primary)' }}>•</span>
+                        <span>{p}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Vulnerability chips */}
+              {advisory.vulnerable_info && (
+                <div style={{ marginTop: 12, borderTop: '1px solid var(--border-subtle)', paddingTop: 10 }}>
+                  <div className="chip-row" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <div className="chip" style={{ fontSize: 11, padding: '4px 8px' }}>
+                      <span className="chip-icon">🏥</span> {advisory.vulnerable_info.hospitals} Hosp.
+                    </div>
+                    <div className="chip" style={{ fontSize: 11, padding: '4px 8px' }}>
+                      <span className="chip-icon">🏫</span> {advisory.vulnerable_info.schools} Schools
+                    </div>
+                    <div className="chip" style={{ fontSize: 11, padding: '4px 8px' }}>
+                      <span className="chip-icon">👴</span> {advisory.vulnerable_info.elderly_pct}% Elderly
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ marginTop: 12, fontSize: 10, color: 'var(--text-muted)' }}>
+                Generated at {new Date(advisory.generated_at).toLocaleTimeString()}
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100px', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-md)' }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading advisory...</span>
+            </div>
           )}
         </div>
-
-        {/* Advisory output */}
-        {advisory ? (
-          <div className={`advisory-card level-${advisory.level}`}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                  {advisory.ward_name} · {advisory.language}
-                </div>
-                <div style={{ fontSize: 28, fontWeight: 800, color: aqiColor(advisory.aqi), marginTop: 4 }}>
-                  AQI {Math.round(advisory.aqi)}
-                </div>
-              </div>
-              <span className={`aqi-badge ${advisory.level}`}>
-                {advisory.level.replace('_', ' ')}
-              </span>
-            </div>
-            <div className="advisory-text">{advisory.advisory}</div>
-            
-            {/* Driver Analysis Section explaining why AQI is high */}
-            {advisory.reason && (
-              <div style={{ 
-                marginTop: '16px', 
-                padding: '12px 16px', 
-                background: 'rgba(255,255,255,0.03)', 
-                borderRadius: '8px', 
-                fontSize: '13px', 
-                borderLeft: `4px solid ${aqiColor(advisory.aqi)}`,
-                color: '#e2e8f0',
-                lineHeight: '1.5'
-              }}>
-                <strong style={{ color: '#f1f5f9', display: 'block', marginBottom: '4px' }}>
-                  🔍 Driver Analysis (Why is AQI elevated?):
-                </strong>
-                {advisory.reason}
-              </div>
-            )}
-
-            {advisory.precautions.length > 0 && (
-              <>
-                <div className="card-title">Precautions</div>
-                <ul className="precaution-list">
-                  {advisory.precautions.map((p, i) => <li key={i}>{p}</li>)}
-                </ul>
-              </>
-            )}
-            <div style={{ marginTop: 16, fontSize: 11, color: 'var(--text-muted)' }}>
-              Generated at {new Date(advisory.generated_at).toLocaleTimeString()}
-            </div>
-          </div>
-        ) : (
-          <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ color: 'var(--text-muted)' }}>Select a ward to generate advisory</span>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   )
 }

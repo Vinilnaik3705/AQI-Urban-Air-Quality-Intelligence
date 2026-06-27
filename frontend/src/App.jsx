@@ -732,24 +732,32 @@ function WindStreamAnimation() {
   const map = useMap();
   const canvasRef = useRef(null);
   const [windAngle, setWindAngle] = useState(-Math.PI / 5); // default SW to NE
+  const [windSpeed, setWindSpeed] = useState(1.5); // default speed factor
 
-  // Fetch real wind direction dynamically for India center
+  // Fetch real wind direction dynamically using hourly Open-Meteo endpoint
   useEffect(() => {
     async function fetchWindDirection() {
       try {
-        const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=20.5937&longitude=78.9629&current=wind_speed_10m,wind_direction_10m');
+        const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=17.3850&longitude=78.4867&hourly=windspeed_10m,winddirection_10m');
         if (res.ok) {
           const data = await res.json();
-          if (data.current && data.current.wind_direction_10m != null) {
-            const dir = data.current.wind_direction_10m;
-            // Met direction is where wind blows FROM. Trajectory is (dir + 180).
+          if (data.hourly && data.hourly.winddirection_10m && data.hourly.winddirection_10m.length > 0) {
+            const dir = data.hourly.winddirection_10m[0];
+            const speed = data.hourly.windspeed_10m ? data.hourly.windspeed_10m[0] : 12.3;
+            
+            // Meteorological wind direction is where wind blows FROM. Trajectory is (dir + 180) degrees.
             const angleRad = ((dir + 180) % 360) * Math.PI / 180;
             setWindAngle(angleRad);
-            console.log(`Real wind direction fetched: ${dir}deg. Flow angle: ${angleRad.toFixed(2)}rad`);
+            
+            // Scale windspeed_10m to particle speed
+            const calculatedSpeed = Math.min(3.5, Math.max(0.8, speed / 8));
+            setWindSpeed(calculatedSpeed);
+            
+            console.log(`Open-Meteo Wind API success: direction=${dir}deg, speed=${speed}km/h -> flowAngle=${angleRad.toFixed(2)}rad, particleSpeed=${calculatedSpeed.toFixed(2)}`);
           }
         }
       } catch (e) {
-        console.error('Failed to fetch real-time wind direction from API', e);
+        console.error('Failed to fetch real-time wind direction from hourly API', e);
       }
     }
     fetchWindDirection();
@@ -782,13 +790,13 @@ function WindStreamAnimation() {
     resizeCanvas();
     map.on('resize', resizeCanvas);
 
-    // Initialize particles with dynamic wind angle
+    // Initialize particles with dynamic wind angle and speed factor
     for (let i = 0; i < particleCount; i++) {
       particles.push({
         x: Math.random() * canvas.width,
         y: Math.random() * canvas.height,
         length: 20 + Math.random() * 30,
-        speed: 1.2 + Math.random() * 1.8,
+        speed: (1.2 + Math.random() * 1.8) * (windSpeed / 1.5),
         opacity: 0.12 + Math.random() * 0.35,
         angle: windAngle
       });
@@ -844,7 +852,7 @@ function WindStreamAnimation() {
         canvas.parentNode.removeChild(canvas);
       }
     };
-  }, [map, windAngle]);
+  }, [map, windAngle, windSpeed]);
 
   return null;
 }

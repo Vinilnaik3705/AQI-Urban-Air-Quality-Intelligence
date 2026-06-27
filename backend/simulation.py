@@ -8,6 +8,7 @@ Falls back to estimation only when the API is unreachable.
 
 from __future__ import annotations
 
+import os
 import math
 import random
 import time
@@ -241,10 +242,117 @@ def get_nearest_live_city(lat: float, lng: float) -> str:
 AQ_API_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
 
-async def _fetch_real_aqi(lat: float, lng: float) -> Optional[Dict[str, Any]]:
-    """Fetch real-time air quality from Open-Meteo Air Quality API (free, unlimited, accurate)."""
+def _get_openaq_key() -> Optional[str]:
+    """Retrieve the OpenAQ API key from the environment variables or the local .env file."""
+    key = os.environ.get("OPENAQ_API_KEY")
+    if key:
+        return key
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        env_path = os.path.join(os.path.dirname(__file__), "../.env")
+        if os.path.exists(env_path):
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip().startswith("OPENAQ_API_KEY="):
+                        return line.strip().split("=", 1)[1].strip()
+    except Exception:
+        pass
+    return "89ae0b63c71785a9e539f889c5f71034472844adfaf77457f3feded3efd2aff0"  # fallback key
+
+
+async def _fetch_real_aqi(lat: float, lng: float) -> Optional[Dict[str, Any]]:
+    """Fetch real-time air quality. Attempts to use OpenAQ v3 API first, falling back to Open-Meteo."""
+    api_key = _get_openaq_key()
+    
+    # 1. Attempt OpenAQ v3
+    if api_key:
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                # Query locations within 50km
+                loc_resp = await client.get(
+                    "https://api.openaq.org/v3/locations",
+                    params={"coordinates": f"{lat:.4f},{lng:.4f}", "radius": 50000},
+                    headers={"X-API-Key": api_key}
+                )
+                if loc_resp.status_code == 200:
+                    loc_data = loc_resp.json()
+                    results = loc_data.get("results", [])
+                    if results:
+                        # Take the closest location
+                        closest_loc = results[0]
+                        loc_id = closest_loc["id"]
+                        
+                        # Build mapping from sensor id to parameter name
+                        sensor_map = {}
+                        for s in closest_loc.get("sensors", []):
+                            param_name = s.get("parameter", {}).get("name", "").lower()
+                            if param_name:
+                                sensor_map[s["id"]] = param_name
+                        
+                        # Query latest values for this location
+                        latest_resp = await client.get(
+                            f"https://api.openaq.org/v3/locations/{loc_id}/latest",
+                            headers={"X-API-Key": api_key}
+                        )
+                        if latest_resp.status_code == 200:
+                            latest_data = latest_resp.json()
+                            latest_results = latest_data.get("results", [])
+                            
+                            pollutants = {
+                                "pm25": 0.0, "pm10": 0.0, "no2": 0.0,
+                                "so2": 0.0, "co": 0.0, "o3": 0.0
+                            }
+                            has_measurements = False
+                            
+                            for m in latest_results:
+                                s_id = m.get("sensorsId")
+                                val = m.get("value")
+                                if s_id in sensor_map and val is not None:
+                                    param = sensor_map[s_id]
+                                    # Normalize parameters
+                                    if param == "pm25" or param == "pm2_5":
+                                        pollutants["pm25"] = val
+                                        has_measurements = True
+                                    elif param == "pm10":
+                                        pollutants["pm10"] = val
+                                        has_measurements = True
+                                    elif param == "no2":
+                                        pollutants["no2"] = val
+                                        has_measurements = True
+                                    elif param == "so2":
+                                        pollutants["so2"] = val
+                                        has_measurements = True
+                                    elif param == "co":
+                                        pollutants["co"] = val
+                                        has_measurements = True
+                                    elif param == "o3":
+                                        pollutants["o3"] = val
+                                        has_measurements = True
+                            
+                            if has_measurements:
+                                # Standardize CO to mg/m3
+                                if pollutants["co"] > 10.0:
+                                    pollutants["co"] /= 1000.0
+                                    
+                                aqi_val = calculate_indian_aqi(
+                                    pollutants["pm25"], pollutants["pm10"], pollutants["no2"],
+                                    pollutants["so2"], pollutants["co"], pollutants["o3"]
+                                )
+                                return {
+                                    "aqi": round(aqi_val, 1),
+                                    "pm25": round(pollutants["pm25"], 1),
+                                    "pm10": round(pollutants["pm10"], 1),
+                                    "no2": round(pollutants["no2"], 1),
+                                    "so2": round(pollutants["so2"], 1),
+                                    "co": round(pollutants["co"], 2),
+                                    "o3": round(pollutants["o3"], 1),
+                                    "source": f"openaq-v3 (live, station: {closest_loc.get('name')})"
+                                }
+        except Exception as e:
+            print("OpenAQ v3 request failed, falling back to Open-Meteo:", e)
+
+    # 2. Fallback to Open-Meteo CAMS Air Quality API
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(AQ_API_URL, params={
                 "latitude": lat,
                 "longitude": lng,
@@ -252,21 +360,20 @@ async def _fetch_real_aqi(lat: float, lng: float) -> Optional[Dict[str, Any]]:
             })
             if resp.status_code == 200:
                 data = resp.json().get("current", {})
-                factor = get_indian_seasonal_calibration(lat, lng)
-                gas_factor = max(0.5, factor) if factor < 1.0 else factor
-                pm25 = data.get("pm2_5", 0) * factor
-                pm10 = data.get("pm10", 0) * factor
-                no2 = data.get("nitrogen_dioxide", 0) * gas_factor
-                so2 = data.get("sulphur_dioxide", 0) * gas_factor
-                co = (data.get("carbon_monoxide", 0) * gas_factor) / 1000.0
-                o3 = data.get("ozone", 0) * gas_factor
+                pm25 = data.get("pm2_5", 0)
+                pm10 = data.get("pm10", 0)
+                no2 = data.get("nitrogen_dioxide", 0)
+                so2 = data.get("sulphur_dioxide", 0)
+                co = data.get("carbon_monoxide", 0) / 1000.0
+                o3 = data.get("ozone", 0)
+                aqi_val = calculate_indian_aqi(pm25, pm10, no2, so2, co, o3)
                 return {
-                    "aqi": round(pm25, 1),
+                    "aqi": round(aqi_val, 1),
                     "pm25": round(pm25, 1),
                     "pm10": round(pm10, 1),
                     "no2": round(no2, 1),
                     "so2": round(so2, 1),
-                    "co": round(co, 2),  # µg/m³ → mg/m³
+                    "co": round(co, 2),
                     "o3": round(o3, 1),
                     "source": "open-meteo (live)",
                 }
@@ -531,7 +638,7 @@ class SimulationEngine:
     async def generate_readings(
         self, city_key: str = DEFAULT_CITY
     ) -> List[Dict[str, Any]]:
-        """Generate AQI readings — fetches REAL data from Open-Meteo."""
+        """Generate AQI readings — fetches REAL data via the hybrid OpenAQ v3 / Open-Meteo pipeline."""
         cache_key = f"readings_{city_key}"
         if self._is_cached(cache_key):
             return self._cache[cache_key]
@@ -544,120 +651,59 @@ class SimulationEngine:
             keys = list(CITIES.keys())
             live_keys = [k for k in keys if k in LIVE_CITIES]
             other_keys = [k for k in keys if k not in LIVE_CITIES]
-            
-            # Divide live keys into batches of 40 to avoid slow Open-Meteo responses
-            batch_size = 40
-            batches = [live_keys[i:i + batch_size] for i in range(0, len(live_keys), batch_size)]
-            
+
             import asyncio
             
-            async def fetch_batch(batch_keys):
-                batch_lats = [str(CITIES[k]["center"][0]) for k in batch_keys]
-                batch_lngs = [str(CITIES[k]["center"][1]) for k in batch_keys]
-                url = "https://air-quality-api.open-meteo.com/v1/air-quality"
-                params = {
-                    "latitude": ",".join(batch_lats),
-                    "longitude": ",".join(batch_lngs),
-                    "current": "pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone",
-                }
-                async with httpx.AsyncClient(timeout=25.0) as client:
-                    resp = await client.get(url, params=params)
-                    if resp.status_code == 200:
-                        return resp.json()
-                return []
-
-            live_readings_map = {}
-            try:
-                results_batches = await asyncio.gather(*(fetch_batch(b) for b in batches), return_exceptions=True)
+            async def fetch_city_reading(k):
+                lat, lng = CITIES[k]["center"]
+                aqi_data = await _fetch_real_aqi(lat, lng)
                 
-                for batch_keys, batch_result in zip(batches, results_batches):
-                    if isinstance(batch_result, Exception) or not batch_result:
-                        print("Error fetching batch:", batch_result)
-                        # Fallback for this batch
-                        for k in batch_keys:
-                            pollutants = {"pm25": 30.0, "pm10": 60.0, "no2": 25.0, "so2": 8.0, "co": 0.6, "o3": 45.0}
-                            r_entry = {
-                                "sensor_id": f"SENSOR_{k}",
-                                "ward_id": k,
-                                "location": CITIES[k]["center"],
-                                "timestamp": ts.isoformat(),
-                                "aqi": 80.0,
-                                "aqi_in": 80.0,
-                                "pollutants": pollutants,
-                                "source": "estimation (fallback)"
-                            }
-                            readings.append(r_entry)
-                            live_readings_map[k] = r_entry
-                        continue
-                    
-                    items = batch_result if isinstance(batch_result, list) else [batch_result]
-                    for k, item in zip(batch_keys, items):
-                        curr = item.get("current", {})
-                        pm25 = curr.get("pm2_5", 25.0)
-                        pm10 = curr.get("pm10", 50.0)
-                        lat = CITIES[k]["center"][0]
-                        lng = CITIES[k]["center"][1]
-                        
-                        # Use real API values directly without adding simulated plume on top
-                        # (Gaussian plume dispersion would double-count emissions already captured by the sensor)
-
-                        # Calculate procedural wind for wind display
-                        h_seed = ts.hour + ts.minute // 10
-                        rng_wind = random.Random(hash(f"{k}_{h_seed}"))
-                        ws = rng_wind.uniform(1.5, 6.0)  # wind speed in m/s
-                        wd = rng_wind.uniform(0.0, 360.0)  # wind direction in degrees
-                        self._cache[f"wind_{k}"] = (ws, wd)
-
-                        factor = get_indian_seasonal_calibration(lat, lng)
-                        gas_factor = max(0.5, factor) if factor < 1.0 else factor
-
-                        pollutants = {
-                            "pm25": round(pm25 * factor, 1),
-                            "pm10": round(pm10 * factor, 1),
-                            "no2": max(0.0, round(curr.get("nitrogen_dioxide", 20.0) * gas_factor, 1)),
-                            "so2": max(0.0, round(curr.get("sulphur_dioxide", 5.0) * gas_factor, 1)),
-                            "co": max(0.0, round((curr.get("carbon_monoxide", 300.0) * gas_factor) / 1000.0, 2)),
-                            "o3": max(0.0, round(curr.get("ozone", 30.0) * gas_factor, 1)),
-                        }
-                        aqi_in = calculate_indian_aqi(
-                            pollutants["pm25"], pollutants["pm10"], pollutants["no2"],
-                            pollutants["so2"], pollutants["co"], pollutants["o3"]
-                        )
-                        r_entry = {
-                            "sensor_id": f"SENSOR_{k}",
-                            "ward_id": k,
-                            "location": CITIES[k]["center"],
-                            "timestamp": ts.isoformat(),
-                            "aqi": round(aqi_in, 1),
-                            "aqi_in": round(aqi_in, 1),
-                            "pollutants": pollutants,
-                            "source": "open-meteo (live)"
-                        }
-                        readings.append(r_entry)
-                        live_readings_map[k] = r_entry
-            except Exception as e:
-                print("Error batch fetching global cities:", e)
-                for k in live_keys:
+                # Wind speed / wind direction procedural calculation for UI
+                h_seed = ts.hour + ts.minute // 10
+                rng_wind = random.Random(hash(f"{k}_{h_seed}"))
+                ws = rng_wind.uniform(1.5, 6.0)
+                wd = rng_wind.uniform(0.0, 360.0)
+                self._cache[f"wind_{k}"] = (ws, wd)
+                
+                if not aqi_data:
                     pollutants = {"pm25": 30.0, "pm10": 60.0, "no2": 25.0, "so2": 8.0, "co": 0.6, "o3": 45.0}
-                    r_entry = {
-                        "sensor_id": f"SENSOR_{k}",
-                        "ward_id": k,
-                        "location": CITIES[k]["center"],
-                        "timestamp": ts.isoformat(),
-                        "aqi": 80.0,
-                        "aqi_in": 80.0,
-                        "pollutants": pollutants,
-                        "source": "estimation (fallback)"
+                    aqi_val = 80.0
+                    source = "estimation (fallback)"
+                else:
+                    pollutants = {
+                        "pm25": aqi_data["pm25"],
+                        "pm10": aqi_data["pm10"],
+                        "no2": aqi_data["no2"],
+                        "so2": aqi_data["so2"],
+                        "co": aqi_data["co"],
+                        "o3": aqi_data["o3"]
                     }
-                    readings.append(r_entry)
-                    live_readings_map[k] = r_entry
+                    aqi_val = aqi_data["aqi"]
+                    source = aqi_data["source"]
+                
+                return {
+                    "sensor_id": f"SENSOR_{k}",
+                    "ward_id": k,
+                    "location": CITIES[k]["center"],
+                    "timestamp": ts.isoformat(),
+                    "aqi": round(aqi_val, 1),
+                    "aqi_in": round(aqi_val, 1),
+                    "pollutants": pollutants,
+                    "source": source
+                }
+
+            # Fetch all live cities in parallel
+            fetched_readings = await asyncio.gather(*(fetch_city_reading(k) for k in live_keys))
+            readings.extend(fetched_readings)
+
+            live_readings_map = {r["ward_id"]: r for r in readings}
 
             # Process other cities using nearest-neighbor fallback
             for k in other_keys:
                 lat, lng = CITIES[k]["center"]
                 nearest_key = get_nearest_live_city(lat, lng)
                 ref_reading = live_readings_map.get(nearest_key)
-                
+
                 if ref_reading:
                     ref_p = ref_reading["pollutants"]
                     pollutants = {
@@ -707,12 +753,7 @@ class SimulationEngine:
             if aqi_data:
                 pm25 = aqi_data["pm25"]
                 pm10 = aqi_data["pm10"]
-                lat = city["center"][0]
-                lng = city["center"][1]
                 
-                # Use real API values directly without adding simulated plume on top
-                # (Gaussian plume dispersion would double-count emissions already captured by the sensor)
-
                 # Calculate procedural wind
                 h_seed = ts.hour + ts.minute // 10
                 rng_wind = random.Random(hash(f"{city_key}_{h_seed}"))
@@ -728,11 +769,8 @@ class SimulationEngine:
                     "co": max(0.0, round(aqi_data["co"], 2)),
                     "o3": max(0.0, round(aqi_data["o3"], 1)),
                 }
-                aqi_in = calculate_indian_aqi(
-                    pollutants["pm25"], pollutants["pm10"], pollutants["no2"],
-                    pollutants["so2"], pollutants["co"], pollutants["o3"]
-                )
-                source = "open-meteo (live)"
+                aqi_in = aqi_data["aqi"]
+                source = aqi_data["source"]
             else:
                 pollutants = {"pm25": 30.0, "pm10": 60.0, "no2": 25.0, "so2": 8.0, "co": 0.6, "o3": 45.0}
                 aqi_in = 80.0

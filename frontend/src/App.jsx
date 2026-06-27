@@ -1254,7 +1254,7 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
                   justifyContent: 'center',
                   fontSize: '13px'
                 }}>
-                  📡
+                  <Radio size={14} />
                 </div>
                 <span>Air quality stations</span>
               </div>
@@ -1294,7 +1294,7 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
                   justifyContent: 'center',
                   fontSize: '13px'
                 }}>
-                  🔥
+                  <Flame size={14} />
                 </div>
                 <span>Fires</span>
               </div>
@@ -1338,7 +1338,7 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
                   justifyContent: 'center',
                   fontSize: '13px'
                 }}>
-                  🏭
+                  <Factory size={14} />
                 </div>
                 <span>Factories</span>
               </div>
@@ -1378,7 +1378,7 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
                   justifyContent: 'center',
                   fontSize: '13px'
                 }}>
-                  🚗
+                  <Car size={14} />
                 </div>
                 <span>Vehicular Traffic</span>
               </div>
@@ -1418,7 +1418,7 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
                   justifyContent: 'center',
                   fontSize: '13px'
                 }}>
-                  🏗️
+                  <Hammer size={14} />
                 </div>
                 <span>Construction Sites</span>
               </div>
@@ -1567,7 +1567,7 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {/* Header: Location */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-              <span style={{ fontSize: '18px', color: '#10b981' }}>📍</span>
+              <MapPin size={16} color="#e11d48" style={{ flexShrink: 0 }} />
               <span style={{ fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>{selectedWard.name}</span>
             </div>
             <div style={{ fontSize: '12px', color: '#64748b', marginLeft: '24px', marginBottom: '16px' }}>
@@ -1582,18 +1582,18 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
               </div>
             )}
             {selectedWard.weather && selectedWard.weather.temperature_c !== null && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', gap: '8px', marginBottom: '16px', fontSize: '13px', color: '#475569', background: '#f1f5f9', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <span title="Temperature" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>🌡️ <strong>{selectedWard.weather.temperature_c}°C</strong></span>
-                <span title="Wind Speed" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>💨 <strong>{selectedWard.weather.wind_speed_kmh} km/h</strong></span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', gap: '12px', marginBottom: '16px', fontSize: '12px', color: '#475569', background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <span title="Temperature" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><Thermometer size={14} color="#64748b" /> <strong>{selectedWard.weather.temperature_c}°C</strong></span>
+                <span title="Wind Speed" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><Activity size={14} color="#64748b" /> <strong>{selectedWard.weather.wind_speed_kmh} km/h</strong></span>
                 {selectedWard.weather.humidity_pct !== undefined && selectedWard.weather.humidity_pct !== null && (
-                  <span title="Humidity" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>💧 <strong>{selectedWard.weather.humidity_pct}%</strong></span>
+                  <span title="Humidity" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><Activity size={14} color="#3b82f6" /> <strong>{selectedWard.weather.humidity_pct}%</strong></span>
                 )}
               </div>
             )}
 
             {/* Air Quality Index Label */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#64748b', marginBottom: '8px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
-              <span>📊</span>
+              <Gauge size={14} color="#64748b" />
               <span>Air Quality Index (AQI-IN)</span>
             </div>
 
@@ -2958,7 +2958,8 @@ function CitizensAdvisoryPopup({ state, advisory, lang, onChangeLang, selectedWa
           <div className="advisory-popup-header">
             <div>
               <div className="advisory-popup-title">
-                <span>👥 Health Advisory Portal</span>
+                <Users size={16} color="#10b981" />
+                <span>Health Advisory Portal</span>
               </div>
               <div className="advisory-popup-subtitle">
                 Auto-generated, multi-lingual advisories based on prediction

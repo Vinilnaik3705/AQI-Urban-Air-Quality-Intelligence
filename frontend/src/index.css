@@ -742,3 +742,86 @@ body{
   margin-bottom: 4px;
 }
 
+/* ── Citizen Advisory Widget ────────────────────────────────────────────── */
+.advisory-widget-container {
+  position: fixed;
+  bottom: 22px;
+  right: 22px;
+  z-index: 9999;
+  font-family: 'Inter', sans-serif;
+}
+.advisory-trigger-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #10b981;
+  border: none;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(16, 185, 129, 0.35);
+  transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.advisory-trigger-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 22px rgba(16, 185, 129, 0.55);
+}
+.advisory-trigger-btn.open {
+  background: #ef4444;
+  box-shadow: 0 4px 18px rgba(239, 68, 68, 0.4);
+  transform: rotate(90deg);
+}
+.advisory-popup-card {
+  position: absolute;
+  bottom: 64px;
+  right: 0;
+  width: 400px;
+  max-height: 78vh;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+  border-radius: var(--r-lg);
+  overflow-y: auto;
+  padding: 18px;
+  animation: slideUp 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.advisory-popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+.advisory-popup-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.advisory-popup-subtitle {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+.advisory-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  transition: var(--ease);
+}
+.advisory-close-btn:hover {
+  color: var(--text-primary);
+}
+

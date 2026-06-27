@@ -547,19 +547,22 @@ async def subscribe_advisory(
     channel: str = Query(default="none"),
     lang: str = Query(default="en"),
     phone: str = Query(default=""),
+    email: str = Query(default=""),
 ):
     """Register a public health advisory alert subscription."""
-    sub_key = f"{ward_id}_{profile}_{channel}_{phone}"
+    sub_key = f"{ward_id}_{profile}_{channel}_{phone}_{email}"
     ACTIVE_SUBSCRIPTIONS[sub_key] = {
         "ward_id": ward_id,
         "profile": profile,
         "channel": channel,
         "lang": lang,
         "phone": phone,
+        "email": email,
         "subscribed_at": datetime.now(timezone.utc).isoformat()
     }
     print(f"Registered subscription: {ACTIVE_SUBSCRIPTIONS[sub_key]}")
     return {"status": "success", "message": f"Successfully subscribed to {channel} alerts."}
+
 
 
 @app.get("/api/alerts")

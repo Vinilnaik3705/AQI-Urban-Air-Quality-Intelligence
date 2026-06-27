@@ -3168,8 +3168,9 @@ function PersonalAlertSubscriptionPopup({
   onLoadAdvisory
 }) {
   const [personalProfile, setPersonalProfile] = useState(profile || 'healthy_adult')
-  const [alertChannel, setAlertChannel] = useState('none')
+  const [alertChannel, setAlertChannel] = useState('sms')
   const [phoneNumber, setPhoneNumber] = useState('')
+  const [emailAddress, setEmailAddress] = useState('')
   const [subscriptionActive, setSubscriptionActive] = useState(false)
   const [subscribing, setSubscribing] = useState(false)
 
@@ -3185,7 +3186,7 @@ function PersonalAlertSubscriptionPopup({
     if (!selectedWard) return;
     setSubscribing(true);
     try {
-      const response = await fetch(`/api/advisory/subscribe?ward_id=${selectedWard.id}&profile=${personalProfile}&channel=${alertChannel}&lang=${lang}&phone=${encodeURIComponent(phoneNumber)}`, {
+      const response = await fetch(`/api/advisory/subscribe?ward_id=${selectedWard.id}&profile=${personalProfile}&channel=${alertChannel}&lang=${lang}&phone=${encodeURIComponent(phoneNumber)}&email=${encodeURIComponent(emailAddress)}`, {
         method: 'POST'
       });
       const data = await response.json();
@@ -3272,14 +3273,13 @@ function PersonalAlertSubscriptionPopup({
                       setSubscriptionActive(false);
                     }}
                   >
-                    <option value="none">View Only</option>
                     <option value="sms">SMS Text Alert</option>
-                    <option value="ivr">IVR Voice Call</option>
-                    <option value="app">Mobile App Push</option>
+                    <option value="phone">Phone Call</option>
+                    <option value="email">Email Alert</option>
                   </select>
                 </div>
 
-                {(alertChannel === 'sms' || alertChannel === 'ivr') && (
+                {(alertChannel === 'sms' || alertChannel === 'phone') && (
                   <div style={{ animation: 'fadeIn 0.2s ease-in-out' }}>
                     <label style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', display: 'block', marginBottom: '4px' }}>Phone Number</label>
                     <input
@@ -3290,6 +3290,23 @@ function PersonalAlertSubscriptionPopup({
                       value={phoneNumber}
                       onChange={e => {
                         setPhoneNumber(e.target.value);
+                        setSubscriptionActive(false);
+                      }}
+                    />
+                  </div>
+                )}
+
+                {alertChannel === 'email' && (
+                  <div style={{ animation: 'fadeIn 0.2s ease-in-out' }}>
+                    <label style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', display: 'block', marginBottom: '4px' }}>Email Address</label>
+                    <input
+                      type="email"
+                      className="select-field"
+                      placeholder="e.g. citizen@example.com"
+                      style={{ width: '100%', padding: '8px 12px', fontSize: '14px', boxSizing: 'border-box' }}
+                      value={emailAddress}
+                      onChange={e => {
+                        setEmailAddress(e.target.value);
                         setSubscriptionActive(false);
                       }}
                     />
@@ -3351,7 +3368,7 @@ function PersonalAlertSubscriptionPopup({
                   }}>
                     <CheckCircle size={14} style={{ marginTop: '2px', flexShrink: 0 }} />
                     <span>
-                      Advisory personalized! {alertChannel !== 'none' && `Alert subscription registered successfully for ${alertChannel.toUpperCase()} alerts.`}
+                      Advisory personalized! Alert subscription registered successfully for {alertChannel.toUpperCase()} alerts.
                     </span>
                   </div>
                 )}

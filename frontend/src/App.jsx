@@ -2109,11 +2109,23 @@ function CitizensAdvisoryPopup({ state, advisory, lang, onChangeLang, selectedWa
 
     const utterance = new SpeechSynthesisUtterance(textToRead)
     
-    if (lang === 'hi') utterance.lang = 'hi-IN'
-    else if (lang === 'kn') utterance.lang = 'kn-IN'
-    else if (lang === 'ta') utterance.lang = 'ta-IN'
-    else if (lang === 'te') utterance.lang = 'te-IN'
-    else utterance.lang = 'en-IN'
+    let langCode = 'en-IN'
+    if (lang === 'hi') langCode = 'hi-IN'
+    else if (lang === 'kn') langCode = 'kn-IN'
+    else if (lang === 'ta') langCode = 'ta-IN'
+    else if (lang === 'te') langCode = 'te-IN'
+    
+    utterance.lang = langCode
+
+    // Explicitly locate voice matching language tag
+    const voices = window.speechSynthesis.getVoices()
+    const match = voices.find(v => v.lang.toLowerCase().replace('_', '-').startsWith(langCode.substring(0, 2).toLowerCase()))
+    if (match) {
+      utterance.voice = match
+      console.log(`Matched voice: ${match.name} (${match.lang}) for language: ${langCode}`)
+    } else {
+      console.warn(`No native voice found for ${langCode}. Browser will auto-fall back using lang property.`)
+    }
 
     utterance.onend = () => setIsSpeaking(false)
     utterance.onerror = () => setIsSpeaking(false)

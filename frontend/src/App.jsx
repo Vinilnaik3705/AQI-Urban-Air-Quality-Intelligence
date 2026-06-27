@@ -440,9 +440,9 @@ function HeaderSearch({ onSelectPlace }) {
   }
 
   return (
-    <div className="header-search-container" ref={dropdownRef} style={{ position: 'relative' }}>
+    <div className="header-search-container" ref={dropdownRef} style={{ position: 'relative', width: '220px' }}>
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-        <Search size={13} color="#4a6080" style={{ position: 'absolute', left: '10px', pointerEvents: 'none' }} />
+        <Search size={15} color="#64748b" style={{ position: 'absolute', left: '12px', pointerEvents: 'none', zIndex: 5 }} />
         <input
           type="text"
           className="header-search-input"
@@ -450,6 +450,17 @@ function HeaderSearch({ onSelectPlace }) {
           value={query}
           onFocus={() => { if (results.length) setShowDropdown(true) }}
           onChange={e => handleSearch(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '7px 12px 7px 34px',
+            borderRadius: '20px',
+            background: '#f1f5f9',
+            border: '1px solid #cbd5e1',
+            fontSize: '13px',
+            color: '#0f172a',
+            outline: 'none',
+            transition: 'all 0.15s ease'
+          }}
         />
       </div>
       {showDropdown && results.length > 0 && (
@@ -457,16 +468,38 @@ function HeaderSearch({ onSelectPlace }) {
           className="map-search-results"
           onMouseDown={e => e.stopPropagation()}
           onClick={e => e.stopPropagation()}
-          style={{ position: 'absolute', top: '38px', left: 0, width: '100%', zIndex: 9999 }}
+          style={{
+            position: 'absolute',
+            top: '38px',
+            left: 0,
+            width: '100%',
+            zIndex: 9999,
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '12px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+            padding: '6px 0',
+            overflow: 'hidden'
+          }}
         >
           {results.map((r, i) => (
             <div
               key={i}
               className="map-search-result-row"
               onClick={(e) => { e.stopPropagation(); selectItem(r); }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 12px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                color: '#334155',
+                transition: 'background 0.1s'
+              }}
             >
-              <MapPin size={11} color="#4a6080" />
-              <span>
+              <MapPin size={12} color="#64748b" />
+              <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                 <strong>{r.name}</strong>
                 {r.admin1 && `, ${r.admin1}`}
                 {r.country && ` (${r.country})`}
@@ -494,33 +527,59 @@ function Header({ tab, setTab, cityAqi, alertCount, weather, onSelectPlace }) {
         <span>IQAir</span>
       </div>
 
-      {/* Header Right containing Search Bar and EnforceHub Button */}
+      {/* Header Right containing Search Bar and Navigation Group */}
       <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
         {/* Search Input Box */}
         <HeaderSearch onSelectPlace={onSelectPlace} />
 
-        {/* EnforceHub Button */}
-        <button
-          onClick={() => setTab(tab === 'enforcement' ? 'command' : 'enforcement')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '6px 14px',
-            background: tab === 'enforcement' ? '#ef4444' : '#3b82f6',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: '20px',
-            cursor: 'pointer',
-            fontWeight: '700',
-            fontSize: '12px',
-            boxShadow: '0 2px 6px rgba(59, 130, 246, 0.2)',
-            transition: 'all 0.2s ease-in-out'
-          }}
-        >
-          <Shield size={14} />
-          <span>EnforceHub</span>
-        </button>
+        {/* Segmented Navigation Control */}
+        <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
+          {/* Dashboard Button */}
+          <button
+            onClick={() => setTab('command')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 16px',
+              background: tab === 'command' ? '#ffffff' : 'transparent',
+              color: tab === 'command' ? '#0f172a' : '#64748b',
+              border: 'none',
+              borderRadius: '20px',
+              cursor: 'pointer',
+              fontWeight: '750',
+              fontSize: '12px',
+              boxShadow: tab === 'command' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <LayoutDashboard size={14} />
+            <span>Dashboard</span>
+          </button>
+
+          {/* EnforceHub Button */}
+          <button
+            onClick={() => setTab('enforcement')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 16px',
+              background: tab === 'enforcement' ? '#ef4444' : 'transparent',
+              color: tab === 'enforcement' ? '#ffffff' : '#64748b',
+              border: 'none',
+              borderRadius: '20px',
+              cursor: 'pointer',
+              fontWeight: '750',
+              fontSize: '12px',
+              boxShadow: tab === 'enforcement' ? '0 2px 6px rgba(239, 68, 68, 0.2)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Shield size={14} />
+            <span>EnforceHub</span>
+          </button>
+        </div>
       </div>
     </header>
   )
@@ -672,6 +731,29 @@ function AqiGauge({ aqi }) {
 function WindStreamAnimation() {
   const map = useMap();
   const canvasRef = useRef(null);
+  const [windAngle, setWindAngle] = useState(-Math.PI / 5); // default SW to NE
+
+  // Fetch real wind direction dynamically for India center
+  useEffect(() => {
+    async function fetchWindDirection() {
+      try {
+        const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=20.5937&longitude=78.9629&current=wind_speed_10m,wind_direction_10m');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.current && data.current.wind_direction_10m != null) {
+            const dir = data.current.wind_direction_10m;
+            // Met direction is where wind blows FROM. Trajectory is (dir + 180).
+            const angleRad = ((dir + 180) % 360) * Math.PI / 180;
+            setWindAngle(angleRad);
+            console.log(`Real wind direction fetched: ${dir}deg. Flow angle: ${angleRad.toFixed(2)}rad`);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch real-time wind direction from API', e);
+      }
+    }
+    fetchWindDirection();
+  }, []);
 
   useEffect(() => {
     const container = map.getContainer();
@@ -700,7 +782,7 @@ function WindStreamAnimation() {
     resizeCanvas();
     map.on('resize', resizeCanvas);
 
-    // Initialize particles moving from South-West to North-East
+    // Initialize particles with dynamic wind angle
     for (let i = 0; i < particleCount; i++) {
       particles.push({
         x: Math.random() * canvas.width,
@@ -708,7 +790,7 @@ function WindStreamAnimation() {
         length: 20 + Math.random() * 30,
         speed: 1.2 + Math.random() * 1.8,
         opacity: 0.12 + Math.random() * 0.35,
-        angle: -Math.PI / 5 // flow direction (approx -36 degrees, Sw -> NE)
+        angle: windAngle
       });
     }
 
@@ -762,7 +844,7 @@ function WindStreamAnimation() {
         canvas.parentNode.removeChild(canvas);
       }
     };
-  }, [map]);
+  }, [map, windAngle]);
 
   return null;
 }
@@ -2343,22 +2425,67 @@ function EnforcementView({ dispatches, onRefresh, onViewEvidence }) {
 
   const SOURCE_ICONS = { industrial: '🏭', vehicular: '🚗', construction: '🏗️', waste_burning: '🔥' }
 
+  // Format generated_at as Indian Standard Time (IST)
+  const formatIST = (isoString) => {
+    if (!isoString) return '—';
+    try {
+      const d = new Date(isoString);
+      return d.toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour12: true,
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit'
+      }) + ' IST';
+    } catch(e) {
+      return isoString;
+    }
+  }
+
   return (
-    <div className="panel-full">
+    <div className="panel-full" style={{ padding: '24px', background: '#ffffff', borderRadius: '12px', border: '1px solid var(--border)', marginTop: '24px' }}>
       {/* Header */}
-      <div className="panel-header">
+      <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', borderBottom: '1px solid var(--border)', paddingBottom: '16px' }}>
         <div>
-          <div className="panel-title"><Shield size={20} color="#ef4444" /> Enforcement Intelligence Console</div>
-          <div className="panel-subtitle">
-            AI-prioritised inspector dispatch recommendations with evidence packages
+          <div className="panel-title" style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Shield size={22} color="#ef4444" />
+            <span>Enforcement Intelligence Console</span>
+          </div>
+          <div className="panel-subtitle" style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
+            <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>AI-prioritised inspector dispatch recommendations with evidence packages</span>
+            {dispatches && dispatches.generated_at && (
+              <span style={{ fontSize: '12px', color: '#10b981', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                🕒 Last Scanned: {formatIST(dispatches.generated_at)}
+              </span>
+            )}
           </div>
         </div>
-        <button className="btn btn-primary" onClick={onRefresh}><RefreshCw size={13} /> Re-scan Hotspots</button>
+        <button 
+          className="btn btn-primary" 
+          onClick={onRefresh} 
+          style={{
+            background: '#3b82f6',
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: '8px',
+            padding: '8px 16px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontWeight: '700',
+            fontSize: '12px',
+            boxShadow: '0 2px 4px rgba(59, 130, 246, 0.15)'
+          }}
+        >
+          <RefreshCw size={13} /> 
+          <span>Re-scan Hotspots</span>
+        </button>
       </div>
 
       {/* Summary stats bar */}
       {dispatches && (
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
           {[
             { key: 'all',       label: 'Total Hotspots', count: dispatches.total_hotspots,  color: '#38bdf8' },
             { key: 'severe',    label: 'Severe',         count: dispatches.severe_count || 0,    color: '#ef4444' },
@@ -2366,27 +2493,27 @@ function EnforcementView({ dispatches, onRefresh, onViewEvidence }) {
             { key: 'poor',      label: 'Poor',           count: dispatches.poor_count || 0,      color: '#eab308' },
           ].map(s => (
             <button key={s.key} onClick={() => setFilter(s.key)}
-              style={{ flex: 1, minWidth: '100px', padding: '10px 14px', borderRadius: '10px', cursor: 'pointer',
-                background: filter === s.key ? `${s.color}22` : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${filter === s.key ? s.color : '#1e293b'}`,
-                textAlign: 'left' }}>
-              <div style={{ fontSize: '22px', fontWeight: '800', color: s.color }}>{s.count}</div>
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>{s.label}</div>
+              style={{
+                flex: 1,
+                minWidth: '120px',
+                padding: '12px 16px',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                background: filter === s.key ? `${s.color}15` : '#f8fafc',
+                border: `1px solid ${filter === s.key ? s.color : '#cbd5e1'}`,
+                textAlign: 'left',
+                transition: 'all 0.15s ease'
+              }}>
+              <div style={{ fontSize: '24px', fontWeight: '850', color: s.color, lineHeight: '1.1' }}>{s.count}</div>
+              <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginTop: '4px' }}>{s.label}</div>
             </button>
           ))}
-          <div style={{ flex: 1, minWidth: '140px', padding: '10px 14px', borderRadius: '10px',
-            background: 'rgba(255,255,255,0.03)', border: '1px solid #1e293b' }}>
-            <div style={{ fontSize: '11px', color: '#64748b' }}>Last Scanned</div>
-            <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
-              {dispatches.generated_at ? new Date(dispatches.generated_at).toLocaleTimeString() : '—'}
-            </div>
-          </div>
         </div>
       )}
 
       {/* Hotspot cards */}
       {filtered.length > 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {filtered.map((d, i) => {
             const sev = SEVERITY_CONFIG[d.severity] || SEVERITY_CONFIG.poor
             const status = getStatus(d.ward_id, d.status)
@@ -2419,11 +2546,11 @@ function EnforcementView({ dispatches, onRefresh, onViewEvidence }) {
                   </div>
 
                   {/* AQI */}
-                  <div style={{ textAlign: 'center', flexShrink: 0 }}>
-                    <div style={{ fontSize: '24px', fontWeight: '800', color: aqiColor(d.aqi), lineHeight: 1 }}>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: '20px', fontWeight: '850', color: aqiColor(d.aqi) }}>
                       {Math.round(d.aqi)}
                     </div>
-                    <div style={{ fontSize: '10px', color: '#64748b' }}>AQI-IN</div>
+                    <div style={{ fontSize: '9px', color: '#64748b', fontWeight: '600' }}>AQI</div>
                   </div>
 
                   {/* Severity badge */}
@@ -2567,9 +2694,13 @@ function EnforcementView({ dispatches, onRefresh, onViewEvidence }) {
           })}
         </div>
       ) : (
-        <div className="card" style={{ textAlign: 'center', padding: 40 }}>
-          <span style={{ fontSize: 40 }}>✅</span>
-          <p style={{ marginTop: 12, color: 'var(--text-muted)' }}>
+        <div style={{ textAlign: 'center', padding: '60px 40px', background: '#f8fafc', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ background: 'rgba(34, 197, 94, 0.1)', padding: '10px', borderRadius: '50%' }}>
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </div>
+          <p style={{ margin: 0, color: '#475569', fontSize: '14px', fontWeight: '600' }}>
             {filter === 'all'
               ? 'No enforcement hotspots detected. All zones within safe limits.'
               : `No ${filter.replace('_', ' ')} hotspots currently.`}

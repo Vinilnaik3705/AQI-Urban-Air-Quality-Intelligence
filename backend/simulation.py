@@ -343,24 +343,30 @@ async def _fetch_real_forecast(lat: float, lng: float, hours: int = 72) -> Optio
 
 
 def get_sources_for_city(city_key: str) -> List[Dict[str, Any]]:
-    city = CITIES.get(city_key)
+    # Resolve sub-locality key (e.g. "hyderabad_secunderabad") to parent city key
+    lookup_key = city_key
+    if "_" in city_key:
+        lookup_key = city_key.split("_")[0]
+
+    city = CITIES.get(lookup_key)
     if not city:
         return []
     lat, lng = city["center"]
-    if city_key == "delhi":
+    
+    if lookup_key == "delhi":
         return [
             {"id": "delhi_stack_1", "name": "Okhla Thermal Stack", "category": "industrial", "location": [28.5355, 77.2639], "Q": 350.0, "H": 100.0},
             {"id": "delhi_stack_2", "name": "Wazirpur Industrial Area", "category": "industrial", "location": [28.6990, 77.1650], "Q": 220.0, "H": 80.0},
             {"id": "delhi_road_1", "name": "Outer Ring Road Corridor", "category": "vehicular", "location": [28.6200, 77.2100], "Q": 100.0, "H": 2.0},
             {"id": "delhi_fire_1", "name": "Satellite Fire Anomaly (MODIS)", "category": "waste_burning", "location": [28.6500, 77.1500], "Q": 150.0, "H": 0.0}
         ]
-    elif city_key == "mumbai":
+    elif lookup_key == "mumbai":
         return [
             {"id": "mumbai_stack_1", "name": "Trombay Refinery Stack", "category": "industrial", "location": [19.0025, 72.9150], "Q": 400.0, "H": 120.0},
             {"id": "mumbai_stack_2", "name": "Chembur Industrial Zone", "category": "industrial", "location": [19.0522, 72.8906], "Q": 250.0, "H": 75.0},
             {"id": "mumbai_fire_1", "name": "Deonar Dump Yard Fire (Satellite Detected)", "category": "waste_burning", "location": [19.0700, 72.9300], "Q": 200.0, "H": 0.0}
         ]
-    elif city_key == "hyderabad":
+    elif lookup_key == "hyderabad":
         return [
             {"id": "hyd_stack_1", "name": "Jeedimetla Industrial Area Stack", "category": "industrial", "location": [17.5186, 78.4552], "Q": 300.0, "H": 80.0},
             {"id": "hyd_stack_2", "name": "Cherlapally Industrial Estate", "category": "industrial", "location": [17.4667, 78.6012], "Q": 210.0, "H": 70.0},
@@ -368,21 +374,21 @@ def get_sources_for_city(city_key: str) -> List[Dict[str, Any]]:
             {"id": "hyd_road_2", "name": "Begumpet Airport Flyover Corridor", "category": "vehicular", "location": [17.4418, 78.4626], "Q": 95.0, "H": 2.0},
             {"id": "hyd_fire_1", "name": "Jawaharnagar Dump Yard Fire", "category": "waste_burning", "location": [17.5312, 78.5834], "Q": 180.0, "H": 0.0}
         ]
-    elif city_key == "bengaluru":
+    elif lookup_key == "bengaluru":
         return [
             {"id": "blr_stack_1", "name": "Peenya Industrial Area Phase I-IV", "category": "industrial", "location": [13.0285, 77.5195], "Q": 280.0, "H": 75.0},
             {"id": "blr_road_1", "name": "KSR Bengaluru City Railway Station Corridor", "category": "vehicular", "location": [12.9782, 77.5695], "Q": 140.0, "H": 2.0},
             {"id": "blr_road_2", "name": "Silk Board Junction Transit Corridor", "category": "vehicular", "location": [12.9174, 77.6238], "Q": 150.0, "H": 2.0},
             {"id": "blr_fire_1", "name": "Mavallipura Landfill Smoldering Fire", "category": "waste_burning", "location": [13.1250, 77.5500], "Q": 120.0, "H": 0.0}
         ]
-    elif city_key == "chennai":
+    elif lookup_key == "chennai":
         return [
             {"id": "chn_stack_1", "name": "Manali Petrochemical Stack", "category": "industrial", "location": [13.1700, 80.2600], "Q": 380.0, "H": 110.0},
             {"id": "chn_stack_2", "name": "Guindy Industrial Estate Phase II", "category": "industrial", "location": [13.0118, 80.2045], "Q": 180.0, "H": 65.0},
             {"id": "chn_road_1", "name": "Chennai Central Railway Station Junction", "category": "vehicular", "location": [13.0824, 80.2754], "Q": 145.0, "H": 2.0},
             {"id": "chn_fire_1", "name": "Perungudi Dump Site Satellite Thermal Anomaly", "category": "waste_burning", "location": [12.9550, 80.2350], "Q": 190.0, "H": 0.0}
         ]
-    elif city_key == "kolkata":
+    elif lookup_key == "kolkata":
         return [
             {"id": "kol_stack_1", "name": "Port Trust Industrial Stacks", "category": "industrial", "location": [22.5300, 88.3100], "Q": 290.0, "H": 85.0},
             {"id": "kol_road_1", "name": "Howrah Railway Station Bridge & Approach", "category": "vehicular", "location": [22.5833, 88.3414], "Q": 160.0, "H": 2.0},

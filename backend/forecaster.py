@@ -61,15 +61,19 @@ class AQIForecaster:
             if not times:
                 return None
 
+            from simulation import get_indian_seasonal_calibration
+            factor = get_indian_seasonal_calibration(lat, lng)
+            gas_factor = max(0.5, factor) if factor < 1.0 else factor
+
             # Merge data into one dict
             merged = {
                 "time": times,
-                "pm2_5": aq_data.get("pm2_5", []),
-                "pm10": aq_data.get("pm10", []),
-                "no2": aq_data.get("nitrogen_dioxide", []),
-                "so2": aq_data.get("sulphur_dioxide", []),
-                "o3": aq_data.get("ozone", []),
-                "co": [co / 1000.0 if co is not None else 0.0 for co in aq_data.get("carbon_monoxide", [])], # convert ug/m3 to mg/m3
+                "pm2_5": [v * factor if v is not None else 0.0 for v in aq_data.get("pm2_5", [])],
+                "pm10": [v * factor if v is not None else 0.0 for v in aq_data.get("pm10", [])],
+                "no2": [v * gas_factor if v is not None else 0.0 for v in aq_data.get("nitrogen_dioxide", [])],
+                "so2": [v * gas_factor if v is not None else 0.0 for v in aq_data.get("sulphur_dioxide", [])],
+                "o3": [v * gas_factor if v is not None else 0.0 for v in aq_data.get("ozone", [])],
+                "co": [co * gas_factor / 1000.0 if co is not None else 0.0 for co in aq_data.get("carbon_monoxide", [])], # convert ug/m3 to mg/m3
                 "temp": weather_data.get("temperature_2m", []),
                 "humidity": weather_data.get("relative_humidity_2m", []),
                 "wind_speed": weather_data.get("wind_speed_10m", []),

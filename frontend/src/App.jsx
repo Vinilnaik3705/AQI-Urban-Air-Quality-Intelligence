@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import L from 'leaflet'
-import { MapContainer, TileLayer, CircleMarker, Popup, Polyline, useMap, Marker, WMSTileLayer, LayersControl, Tooltip as LeafletTooltip } from 'react-leaflet'
+import { MapContainer, TileLayer, CircleMarker, Popup, Polyline, useMap, Marker, WMSTileLayer, LayersControl, Tooltip as LeafletTooltip, ZoomControl } from 'react-leaflet'
 import {
   Chart as ChartJS,
   ArcElement,
@@ -634,12 +634,26 @@ function EmissionSourcePopup({ src }) {
 
 function AqiGauge({ aqi }) {
   const clampedAqi = Math.max(0, Math.min(500, aqi));
-  // Map 0-500 to -90 to 90 degrees
-  const rotation = -90 + (clampedAqi / 500) * 180;
+  
+  // Calculate correct rotation angle based on 6 equal 30-degree segments:
+  let rotation = -90;
+  if (clampedAqi <= 50) {
+    rotation = -90 + (clampedAqi / 50) * 30;
+  } else if (clampedAqi <= 100) {
+    rotation = -60 + ((clampedAqi - 50) / 50) * 30;
+  } else if (clampedAqi <= 150) {
+    rotation = -30 + ((clampedAqi - 100) / 50) * 30;
+  } else if (clampedAqi <= 200) {
+    rotation = 0 + ((clampedAqi - 150) / 50) * 30;
+  } else if (clampedAqi <= 300) {
+    rotation = 30 + ((clampedAqi - 200) / 100) * 30;
+  } else {
+    rotation = 60 + ((clampedAqi - 300) / 200) * 30;
+  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '16px 0 20px 0', position: 'relative', width: '100%' }}>
-      <svg width="200" height="110" viewBox="0 0 220 120" style={{ display: 'block', margin: '0 auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '8px 0 16px 0', position: 'relative', width: '100%' }}>
+      <svg width="200" height="125" viewBox="0 0 220 135" style={{ display: 'block', margin: '0 auto' }}>
         {/* Arc segments */}
         {/* Good: 0-50 */}
         <path d="M 20 110 A 90 90 0 0 1 32 65" fill="none" stroke="#22c55e" strokeWidth="18" />
@@ -655,13 +669,13 @@ function AqiGauge({ aqi }) {
         <path d="M 188 65 A 90 90 0 0 1 200 110" fill="none" stroke="#991b1b" strokeWidth="18" />
 
         {/* Ticks & Labels */}
-        <text x="15" y="125" fontSize="10" fontWeight="700" fill="#64748b" textAnchor="middle">0</text>
-        <text x="25" y="55" fontSize="10" fontWeight="700" fill="#64748b" textAnchor="middle">50</text>
-        <text x="60" y="25" fontSize="10" fontWeight="700" fill="#64748b" textAnchor="middle">100</text>
-        <text x="110" y="12" fontSize="10" fontWeight="700" fill="#64748b" textAnchor="middle">150</text>
-        <text x="160" y="25" fontSize="10" fontWeight="700" fill="#64748b" textAnchor="middle">200</text>
-        <text x="195" y="55" fontSize="10" fontWeight="700" fill="#64748b" textAnchor="middle">300</text>
-        <text x="205" y="125" fontSize="10" fontWeight="700" fill="#64748b" textAnchor="middle">500</text>
+        <text x="20" y="128" fontSize="10" fontWeight="700" fill="#64748b" textAnchor="middle">0</text>
+        <text x="28" y="58" fontSize="10" fontWeight="700" fill="#64748b" textAnchor="middle">50</text>
+        <text x="62" y="28" fontSize="10" fontWeight="700" fill="#64748b" textAnchor="middle">100</text>
+        <text x="110" y="14" fontSize="10" fontWeight="700" fill="#64748b" textAnchor="middle">150</text>
+        <text x="158" y="28" fontSize="10" fontWeight="700" fill="#64748b" textAnchor="middle">200</text>
+        <text x="192" y="58" fontSize="10" fontWeight="700" fill="#64748b" textAnchor="middle">300</text>
+        <text x="200" y="128" fontSize="10" fontWeight="700" fill="#64748b" textAnchor="middle">500</text>
 
         {/* Needle Pin/Hub */}
         <circle cx="110" cy="110" r="10" fill="#1e293b" />
@@ -671,9 +685,6 @@ function AqiGauge({ aqi }) {
           <polygon points="107,110 113,110 110,25" fill="#1e293b" />
         </g>
       </svg>
-      <div style={{ marginTop: '0px', fontSize: '14px', fontWeight: '800', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-        Air Quality
-      </div>
     </div>
   );
 }
@@ -854,6 +865,7 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
             maxBounds={[[6.0, 65.0], [38.0, 99.0]]}
             maxBoundsViscosity={1.0}
             scrollWheelZoom={true}
+            zoomControl={false}
           >
             <ChangeMapView center={targetCenter} zoom={targetZoom} />
             
@@ -950,38 +962,227 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
                 }}
               />
             )}
+            <ZoomControl position="bottomright" />
           </MapContainer>
 
-
-          {/* Floating Controls Overlay (Right Panel on Map) */}
-          <div className="map-right-controls">
-            <div className="map-controls-group">
-              <span className="map-controls-title">Outdoor</span>
-              <button className={`map-control-btn ${showStations ? 'active' : ''}`} onClick={() => setShowStations(!showStations)}>
-                <span>Air quality stations</span>
-                <span>{showStations ? '✓' : ''}</span>
-              </button>
-              <button className={`map-control-btn ${showFires ? 'active' : ''}`} onClick={() => setShowFires(!showFires)}>
-                <span>Fires</span>
-                <span>{showFires ? '✓' : ''}</span>
-              </button>
-              <button className={`map-control-btn ${showWind ? 'active' : ''}`} onClick={() => setShowWind(!showWind)}>
-                <span>Wind</span>
-                <span>{showWind ? '✓' : ''}</span>
-              </button>
-            </div>
+          {/* Floating Controls Overlay (Right Panel on Map) styled as individual white pills with blue icons */}
+          <div className="map-right-controls" style={{
+            position: 'absolute',
+            top: '20px',
+            right: '20px',
+            zIndex: 1000,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            background: 'transparent',
+            border: 'none',
+            boxShadow: 'none',
+            padding: 0,
+            width: 'auto'
+          }}>
+            <span style={{ fontSize: '10px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px', paddingLeft: '4px' }}>Outdoor</span>
             
-            <div className="map-controls-group" style={{ marginTop: '4px' }}>
-              <span className="map-controls-title">Indoor</span>
-              <button className={`map-control-btn ${showFacilities ? 'active' : ''}`} onClick={() => setShowFacilities(!showFacilities)}>
+            {/* Air Quality Stations Pill */}
+            <button 
+              onClick={() => setShowStations(!showStations)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '6px 14px 6px 6px',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '24px',
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                fontWeight: '600',
+                fontSize: '12px',
+                color: '#1e293b',
+                width: '185px',
+                justifyContent: 'space-between',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  background: showStations ? '#3b82f6' : '#f1f5f9',
+                  color: showStations ? '#ffffff' : '#64748b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '13px'
+                }}>
+                  📡
+                </div>
+                <span>Air quality stations</span>
+              </div>
+              {showStations && <span style={{ color: '#3b82f6', fontWeight: '700', fontSize: '13px' }}>✓</span>}
+            </button>
+
+            {/* Fires Pill */}
+            <button 
+              onClick={() => setShowFires(!showFires)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '6px 14px 6px 6px',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '24px',
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                fontWeight: '600',
+                fontSize: '12px',
+                color: '#1e293b',
+                width: '185px',
+                justifyContent: 'space-between',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  background: showFires ? '#3b82f6' : '#f1f5f9',
+                  color: showFires ? '#ffffff' : '#64748b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '13px'
+                }}>
+                  🔥
+                </div>
+                <span>Fires</span>
+              </div>
+              {showFires && <span style={{ color: '#3b82f6', fontWeight: '700', fontSize: '13px' }}>✓</span>}
+            </button>
+
+            {/* Wind Pill */}
+            <button 
+              onClick={() => setShowWind(!showWind)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '6px 14px 6px 6px',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '24px',
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                fontWeight: '600',
+                fontSize: '12px',
+                color: '#1e293b',
+                width: '185px',
+                justifyContent: 'space-between',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  background: showWind ? '#3b82f6' : '#f1f5f9',
+                  color: showWind ? '#ffffff' : '#64748b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '13px'
+                }}>
+                  💨
+                </div>
+                <span>Wind</span>
+              </div>
+              {showWind && <span style={{ color: '#3b82f6', fontWeight: '700', fontSize: '13px' }}>✓</span>}
+            </button>
+
+            <span style={{ fontSize: '10px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '6px', marginBottom: '2px', paddingLeft: '4px' }}>Indoor</span>
+
+            {/* Clean Air Facilities Pill */}
+            <button 
+              onClick={() => setShowFacilities(!showFacilities)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '6px 14px 6px 6px',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '24px',
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                fontWeight: '600',
+                fontSize: '12px',
+                color: '#1e293b',
+                width: '185px',
+                justifyContent: 'space-between',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  background: showFacilities ? '#3b82f6' : '#f1f5f9',
+                  color: showFacilities ? '#ffffff' : '#64748b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '13px'
+                }}>
+                  🏢
+                </div>
                 <span>Clean Air Facilities</span>
-                <span>{showFacilities ? '✓' : ''}</span>
-              </button>
-              <button className={`map-control-btn ${showIndoor ? 'active' : ''}`} onClick={() => setShowIndoor(!showIndoor)}>
+              </div>
+              {showFacilities && <span style={{ color: '#3b82f6', fontWeight: '700', fontSize: '13px' }}>✓</span>}
+            </button>
+
+            {/* Indoor Sensors Pill */}
+            <button 
+              onClick={() => setShowIndoor(!showIndoor)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '6px 14px 6px 6px',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '24px',
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                fontWeight: '600',
+                fontSize: '12px',
+                color: '#1e293b',
+                width: '185px',
+                justifyContent: 'space-between',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  background: showIndoor ? '#3b82f6' : '#f1f5f9',
+                  color: showIndoor ? '#ffffff' : '#64748b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '13px'
+                }}>
+                  🏠
+                </div>
                 <span>Indoor Sensors</span>
-                <span>{showIndoor ? '✓' : ''}</span>
-              </button>
-            </div>
+              </div>
+              {showIndoor && <span style={{ color: '#3b82f6', fontWeight: '700', fontSize: '13px' }}>✓</span>}
+            </button>
           </div>
         </div>
       </div>
@@ -1082,21 +1283,37 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
             <div className="health-recs-card" style={{ display: 'flex', flexDirection: 'column' }}>
               <h4 style={{ fontSize: '15px', fontWeight: '750', color: '#0f172a', margin: '0 0 12px 0' }}>Health recommendations</h4>
               <div className="health-rec-list" style={{ marginTop: '0' }}>
-                <div className="health-rec-item">
-                  <span className="health-rec-icon">🚫</span>
-                  <span>Avoid outdoor exercise</span>
+                <div className="health-rec-item" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', textAlign: 'center' }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+                  </svg>
+                  <span style={{ fontSize: '11px', fontWeight: '600', color: '#1e293b' }}>Avoid outdoor exercise</span>
                 </div>
-                <div className="health-rec-item">
-                  <span className="health-rec-icon">🪟</span>
-                  <span>Close windows to avoid dirty air</span>
+                <div className="health-rec-item" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', textAlign: 'center' }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <line x1="9" y1="3" x2="9" y2="21" />
+                    <line x1="15" y1="3" x2="15" y2="21" />
+                    <line x1="3" y1="9" x2="21" y2="9" />
+                    <line x1="3" y1="15" x2="21" y2="15" />
+                  </svg>
+                  <span style={{ fontSize: '11px', fontWeight: '600', color: '#1e293b' }}>Close windows</span>
                 </div>
-                <div className="health-rec-item">
-                  <span className="health-rec-icon">😷</span>
-                  <span>Wear a mask outdoors</span>
+                <div className="health-rec-item" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', textAlign: 'center' }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="4" y="6" width="16" height="12" rx="2" />
+                    <path d="M4 9c-2 0-3 1-3 3s1 3 3 3M20 9c2 0 3 1 3 3s-1 3-3 3" />
+                    <line x1="8" y1="12" x2="16" y2="12" />
+                  </svg>
+                  <span style={{ fontSize: '11px', fontWeight: '600', color: '#1e293b' }}>Wear a mask outdoors</span>
                 </div>
-                <div className="health-rec-item">
-                  <span className="health-rec-icon">🌀</span>
-                  <span>Run an air purifier</span>
+                <div className="health-rec-item" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', textAlign: 'center' }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 12a3 3 0 1 0-3-3M12 12a3 3 0 1 0 3-3M12 12a3 3 0 1 0-3 3M12 12a3 3 0 1 0 3 3" />
+                  </svg>
+                  <span style={{ fontSize: '11px', fontWeight: '600', color: '#1e293b' }}>Run an air purifier</span>
                 </div>
               </div>
             </div>
@@ -1104,9 +1321,9 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
         </div>
       )}
       </div>
-      <div className="right-panel">
+      <div className="right-panel" style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', minHeight: '520px', width: '360px', flexShrink: 0 }}>
         {selectedWard ? (
-          <div className="card" style={{ padding: '20px', background: '#ffffff', borderRadius: '12px', border: '1px solid var(--border)', minHeight: '400px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {/* Header: Location */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
               <span style={{ fontSize: '18px', color: '#10b981' }}>📍</span>
@@ -1161,10 +1378,14 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
 
             {/* Pollutants list with Progress Bars */}
             {(() => {
-              let pm25Val = 0, pm10Val = 0;
+              let pm25Val = 0, pm10Val = 0, coVal = 0, so2Val = 0, no2Val = 0, o3Val = 0;
               if (selectedWard.pollutants) {
                 pm25Val = selectedWard.pollutants.pm25;
                 pm10Val = selectedWard.pollutants.pm10;
+                coVal = selectedWard.pollutants.co || 0.4;
+                so2Val = selectedWard.pollutants.so2 || 6;
+                no2Val = selectedWard.pollutants.no2 || 12;
+                o3Val = selectedWard.pollutants.o3 || 45;
               } else {
                 const wardSensors = state.sensors.filter(s => s.ward_id === selectedWard.id)
                 if (wardSensors.length > 0) {
@@ -1172,12 +1393,20 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
                     Math.round(wardSensors.reduce((s, r) => s + (r.pollutants[key] || 0), 0) / wardSensors.length)
                   pm25Val = avg('pm25')
                   pm10Val = avg('pm10')
+                  coVal = avg('co') || 0.4;
+                  so2Val = avg('so2') || 6;
+                  no2Val = avg('no2') || 12;
+                  o3Val = avg('o3') || 45;
                 }
               }
 
               const pollutantsData = [
                 { label: 'PM2.5', value: pm25Val, unit: 'µg/m³', max: 150, color: aqiColor(pm25Val) },
                 { label: 'PM10', value: pm10Val, unit: 'µg/m³', max: 250, color: aqiColor(pm10Val) },
+                { label: 'CO', value: coVal, unit: 'mg/m³', max: 10, color: aqiColor(coVal * 50) },
+                { label: 'SO₂', value: so2Val, unit: 'µg/m³', max: 120, color: aqiColor(so2Val) },
+                { label: 'NO₂', value: no2Val, unit: 'µg/m³', max: 120, color: aqiColor(no2Val) },
+                { label: 'O₃', value: o3Val, unit: 'µg/m³', max: 180, color: aqiColor(o3Val) },
               ]
 
               return (
@@ -1204,7 +1433,7 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
             })()}
           </div>
         ) : (
-          <div className="card" style={{ padding: '30px', background: '#ffffff', borderRadius: '12px', border: '1px solid var(--border)', color: '#64748b', textAlign: 'center', minHeight: '400px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '16px' }}>
+          <div style={{ padding: '30px', color: '#64748b', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '16px', flex: 1 }}>
             <span style={{ fontSize: '48px' }}>🌍</span>
             <strong style={{ color: '#0f172a', fontSize: '16px' }}>Global Air Quality Monitor</strong>
             <p style={{ fontSize: '13px', lineHeight: '1.6', margin: 0 }}>

@@ -915,8 +915,8 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
           )}
         </div>
 
-        {/* Right Column (Maximized Map with Sepia Geothermal styling) */}
-        <div className="iqair-right-panel geothermal-map">
+        {/* Right Column (Maximized Map with Geothermal Heatmap layer) */}
+        <div className="iqair-right-panel">
           <MapContainer
             center={state.city.center}
             zoom={5}
@@ -927,11 +927,17 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
           >
             <ChangeMapView center={targetCenter} zoom={targetZoom} />
             
-            {/* Custom XYZ TileLayer styled dynamically */}
+            {/* Dark Matter Basemap */}
             <TileLayer
               attribution="&copy; CARTO"
-              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
               noWrap={true}
+            />
+
+            {/* WAQI Real-time Air Quality Heatmap Layer */}
+            <TileLayer
+              attribution='Air Quality &copy; <a href="https://waqi.info">WAQI</a>'
+              url="https://tiles.waqi.info/tiles/usepa-aqi/{z}/{x}/{y}.png?token=demo"
             />
 
             {/* Geothermal Heatmap circles */}

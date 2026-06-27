@@ -627,14 +627,10 @@ function EmissionSourcePopup({ src }) {
       setLoading(true);
       try {
         const [lat, lng] = src.location;
-        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=en`, {
-          headers: {
-            'User-Agent': 'AQI-Intervention-App/1.0'
-          }
-        });
+        const res = await fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
         if (res.ok) {
           const data = await res.json();
-          if (active) {
+          if (active && data.address) {
             setAddress(data.address);
           }
         }

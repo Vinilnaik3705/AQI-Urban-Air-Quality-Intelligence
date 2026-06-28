@@ -1733,29 +1733,11 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
               </div>
             )}
 
-            {/* Air Quality Index Label */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#64748b', marginBottom: '8px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
-              <Gauge size={14} color="#64748b" />
-              <span>Air Quality Index (AQI-IN)</span>
-            </div>
-
             {/* SVG Air Quality Gauge Meter */}
             {(() => {
               const aqiVal = selectedWard.aqi_in ?? selectedWard.current_aqi;
               return (
-                <>
-                  <AqiGauge aqi={aqiVal} />
-                  
-                  {/* Big Number and Status level */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '24px', marginTop: '4px' }}>
-                    <span style={{ fontSize: '48px', fontWeight: '850', color: aqiColor(aqiVal), lineHeight: '1' }}>
-                      {Math.round(aqiVal)}
-                    </span>
-                    <span style={{ fontSize: '18px', fontWeight: '700', color: '#0f172a', textTransform: 'capitalize' }}>
-                      {aqiLevel(aqiVal).replace('_', ' ')}
-                    </span>
-                  </div>
-                </>
+                <AqiGauge aqi={aqiVal} />
               )
             })()}
 

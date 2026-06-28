@@ -743,7 +743,7 @@ function AqiGauge({ aqi }) {
     const e = endAngle + gap;
     const [x1, y1] = arcPoint(s);
     const [x2, y2] = arcPoint(e);
-    return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 0 0 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+    return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 0 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
   };
 
   const tickLines = [

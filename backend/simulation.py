@@ -189,9 +189,13 @@ def is_in_india(lat: float, lng: float) -> bool:
 
 def get_indian_seasonal_calibration(lat: float, lng: float) -> float:
     """Calibrate CAMS AQI values for Northern cities where CAMS model overestimates."""
+    # Specific calibration for Jaipur and Jodhpur
+    if 26.0 <= lat <= 27.2 and 72.5 <= lng <= 76.0:
+        return 0.38
     if lat > 25.0:
         return 0.62
     return 1.0
+
 
 
 
@@ -270,12 +274,13 @@ async def _fetch_real_aqi(lat: float, lng: float) -> Optional[Dict[str, Any]]:
     if api_key:
         try:
             async with httpx.AsyncClient(timeout=8.0) as client:
-                # Query locations within 50km
+                # Query locations within 25km (max OpenAQ v3 radius is 25000m)
                 loc_resp = await client.get(
                     "https://api.openaq.org/v3/locations",
-                    params={"coordinates": f"{lat:.4f},{lng:.4f}", "radius": 50000},
+                    params={"coordinates": f"{lat:.4f},{lng:.4f}", "radius": 25000},
                     headers={"X-API-Key": api_key}
                 )
+
                 if loc_resp.status_code == 200:
                     loc_data = loc_resp.json()
                     results = loc_data.get("results", [])
@@ -655,11 +660,26 @@ class SimulationEngine:
             live_keys = [k for k in keys if k in LIVE_CITIES]
             other_keys = [k for k in keys if k not in LIVE_CITIES]
             
+            # Fetch OpenAQ ground-truth data in parallel (with concurrency limit to avoid 429)
+            import asyncio
+            sem = asyncio.Semaphore(5)
+            async def get_openaq_reading(k, lat, lng):
+                async with sem:
+                    try:
+                        return k, await _fetch_real_aqi(lat, lng)
+                    except Exception:
+                        return k, None
+
+            openaq_results = {}
+            openaq_calls = [get_openaq_reading(k, CITIES[k]["center"][0], CITIES[k]["center"][1]) for k in live_keys]
+            openaq_fetched = await asyncio.gather(*openaq_calls)
+            for k, res in openaq_fetched:
+                if res:
+                    openaq_results[k] = res
+            
             # Divide live keys into batches of 40 to avoid slow Open-Meteo responses
             batch_size = 40
             batches = [live_keys[i:i + batch_size] for i in range(0, len(live_keys), batch_size)]
-            
-            import asyncio
             
             async def fetch_batch(batch_keys):
                 batch_lats = [str(CITIES[k]["center"][0]) for k in batch_keys]
@@ -685,16 +705,27 @@ class SimulationEngine:
                         print("Error fetching batch:", batch_result)
                         # Fallback for this batch
                         for k in batch_keys:
-                            pollutants = {"pm25": 30.0, "pm10": 60.0, "no2": 25.0, "so2": 8.0, "co": 0.6, "o3": 45.0}
+                            if k in openaq_results:
+                                aq_data = openaq_results[k]
+                                pollutants = {
+                                    "pm25": aq_data["pm25"], "pm10": aq_data["pm10"], "no2": aq_data["no2"],
+                                    "so2": aq_data["so2"], "co": aq_data["co"], "o3": aq_data["o3"]
+                                }
+                                aqi_in = aq_data["aqi"]
+                                source = aq_data["source"]
+                            else:
+                                pollutants = {"pm25": 30.0, "pm10": 60.0, "no2": 25.0, "so2": 8.0, "co": 0.6, "o3": 45.0}
+                                aqi_in = 80.0
+                                source = "estimation (fallback)"
                             r_entry = {
                                 "sensor_id": f"SENSOR_{k}",
                                 "ward_id": k,
                                 "location": CITIES[k]["center"],
                                 "timestamp": ts.isoformat(),
-                                "aqi": 80.0,
-                                "aqi_in": 80.0,
+                                "aqi": round(aqi_in, 1),
+                                "aqi_in": round(aqi_in, 1),
                                 "pollutants": pollutants,
-                                "source": "estimation (fallback)"
+                                "source": source
                             }
                             readings.append(r_entry)
                             live_readings_map[k] = r_entry
@@ -702,10 +733,6 @@ class SimulationEngine:
                     
                     items = batch_result if isinstance(batch_result, list) else [batch_result]
                     for k, item in zip(batch_keys, items):
-                        curr = item.get("current", {})
-                        pm25 = curr.get("pm2_5", 25.0)
-                        pm10 = curr.get("pm10", 50.0)
-                        
                         # Calculate procedural wind for wind display
                         h_seed = ts.hour + ts.minute // 10
                         rng_wind = random.Random(hash(f"{k}_{h_seed}"))
@@ -713,23 +740,40 @@ class SimulationEngine:
                         wd = rng_wind.uniform(0.0, 360.0)  # wind direction in degrees
                         self._cache[f"wind_{k}"] = (ws, wd)
 
-                        lat_k, lng_k = CITIES[k]["center"]
-                        factor = get_indian_seasonal_calibration(lat_k, lng_k)
-                        gas_factor = max(0.5, factor) if factor < 1.0 else factor
+                        if k in openaq_results:
+                            aq_data = openaq_results[k]
+                            pollutants = {
+                                "pm25": aq_data["pm25"],
+                                "pm10": aq_data["pm10"],
+                                "no2": aq_data["no2"],
+                                "so2": aq_data["so2"],
+                                "co": aq_data["co"],
+                                "o3": aq_data["o3"],
+                            }
+                            aqi_in = aq_data["aqi"]
+                            source = aq_data["source"]
+                        else:
+                            curr = item.get("current", {})
+                            pm25 = curr.get("pm2_5", 25.0)
+                            pm10 = curr.get("pm10", 50.0)
+                            lat_k, lng_k = CITIES[k]["center"]
+                            factor = get_indian_seasonal_calibration(lat_k, lng_k)
+                            gas_factor = max(0.5, factor) if factor < 1.0 else factor
 
-                        pollutants = {
-                            "pm25": round(pm25 * factor, 1),
-                            "pm10": round(pm10 * factor, 1),
-                            "no2": max(0.0, round(curr.get("nitrogen_dioxide", 20.0) * gas_factor, 1)),
-                            "so2": max(0.0, round(curr.get("sulphur_dioxide", 5.0) * gas_factor, 1)),
-                            "co": max(0.0, round(((curr.get("carbon_monoxide", 300.0) * gas_factor) / 1000.0), 2)),
-                            "o3": max(0.0, round(curr.get("ozone", 30.0) * gas_factor, 1)),
-                        }
+                            pollutants = {
+                                "pm25": round(pm25 * factor, 1),
+                                "pm10": round(pm10 * factor, 1),
+                                "no2": max(0.0, round(curr.get("nitrogen_dioxide", 20.0) * gas_factor, 1)),
+                                "so2": max(0.0, round(curr.get("sulphur_dioxide", 5.0) * gas_factor, 1)),
+                                "co": max(0.0, round(((curr.get("carbon_monoxide", 300.0) * gas_factor) / 1000.0), 2)),
+                                "o3": max(0.0, round(curr.get("ozone", 30.0) * gas_factor, 1)),
+                            }
+                            aqi_in = calculate_indian_aqi(
+                                pollutants["pm25"], pollutants["pm10"], pollutants["no2"],
+                                pollutants["so2"], pollutants["co"], pollutants["o3"]
+                            )
+                            source = "open-meteo (live)"
 
-                        aqi_in = calculate_indian_aqi(
-                            pollutants["pm25"], pollutants["pm10"], pollutants["no2"],
-                            pollutants["so2"], pollutants["co"], pollutants["o3"]
-                        )
                         r_entry = {
                             "sensor_id": f"SENSOR_{k}",
                             "ward_id": k,
@@ -738,10 +782,11 @@ class SimulationEngine:
                             "aqi": round(aqi_in, 1),
                             "aqi_in": round(aqi_in, 1),
                             "pollutants": pollutants,
-                            "source": "open-meteo (live)"
+                            "source": source
                         }
                         readings.append(r_entry)
                         live_readings_map[k] = r_entry
+
             except Exception as e:
                 print("Error batch fetching global cities:", e)
                 for k in live_keys:

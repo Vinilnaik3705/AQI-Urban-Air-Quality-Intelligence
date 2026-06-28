@@ -55,17 +55,15 @@ def init_db():
     conn.close()
 
 
-def _get_resend_key_from_env_file() -> Optional[str]:
-    try:
-        env_path = os.path.join(os.path.dirname(__file__), "../.env")
-        if os.path.exists(env_path):
-            with open(env_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.strip().startswith("RESEND_API_KEY="):
-                        return line.strip().split("=", 1)[1].strip()
-    except Exception:
-        pass
-    return None
+def _get_resend_key() -> Optional[str]:
+    """Get Resend API key — checks multiple environment variable names for compatibility."""
+    # Check standard name first, then HF Spaces secret name 'Resend'
+    return (
+        _get_resend_key() or
+        os.environ.get("Resend") or
+        os.environ.get("RESEND") or
+        None
+    )
 
 # ── Application Setup ─────────────────────────────────────────────────────────
 
@@ -98,8 +96,8 @@ async def startup_event():
     init_db()
 
     # Debug: log which API keys are available at startup
-    resend_key = os.environ.get("RESEND_API_KEY")
-    resend_from_env = _get_resend_key_from_env_file()
+    resend_key = _get_resend_key()
+    resend_from_env = _get_resend_key()
     print(f"[STARTUP] RESEND_API_KEY from os.environ: {'SET (len={})'.format(len(resend_key)) if resend_key else 'NOT SET'}")
     print(f"[STARTUP] RESEND_API_KEY from .env file:  {'SET (len={})'.format(len(resend_from_env)) if resend_from_env else 'NOT SET'}")
     print(f"[STARTUP] All env keys containing 'RESEND': {[k for k in os.environ if 'RESEND' in k.upper()]}")
@@ -639,7 +637,7 @@ async def subscribe_advisory(
     confirm_url = f"{base_url}/api/advisory/confirm?token={token}"
     
     # Check for Resend API key
-    resend_key = os.environ.get("RESEND_API_KEY") or _get_resend_key_from_env_file()
+    resend_key = _get_resend_key()
     subject = f"Confirm your AQI alert subscription for {city_name}"
     from_email = os.environ.get("RESEND_FROM_EMAIL") or "AQI Alerts <onboarding@resend.dev>"
     
@@ -747,7 +745,7 @@ async def send_aqi_alerts():
                 </div>
             """
 
-            resend_key = os.environ.get("RESEND_API_KEY") or _get_resend_key_from_env_file()
+            resend_key = _get_resend_key()
             from_email = os.environ.get("RESEND_FROM_EMAIL") or "AQI Alerts <onboarding@resend.dev>"
             if resend_key:
                 try:

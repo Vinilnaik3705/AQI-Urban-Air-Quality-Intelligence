@@ -285,75 +285,79 @@ def _usepa_aqi_to_concentration(aqi: float, bps: list) -> float:
 
 
 async def _fetch_real_aqi_waqi(lat: float, lng: float) -> Optional[Dict[str, Any]]:
-    """Fetch real-time air quality from WAQI API using city name lookup."""
+    """Fetch real-time air quality from WAQI API using geo-based endpoint.
+    
+    Uses /feed/geo:lat;lng/ which finds the nearest real CPCB/WAQI monitoring
+    station to the coordinates — much more reliable than city name lookup.
+    """
     token = _get_waqi_token()
     if not token:
         return None
-    city_key = get_nearest_live_city(lat, lng)
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
-            url = f"https://api.waqi.info/feed/{city_key}/?token={token}"
+            # Geo endpoint: finds nearest monitoring station to these coordinates
+            url = f"https://api.waqi.info/feed/geo:{lat:.4f};{lng:.4f}/?token={token}"
             resp = await client.get(url)
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get("status") == "ok":
                     aq_data = data.get("data", {})
-                    
-                    # Check if the data is stale (older than 24 hours)
+
+                    # Reject data older than 3 hours (10800s) — WAQI stations update hourly
                     meas_time = aq_data.get("time", {}).get("v")
                     if meas_time:
-                        import time
-                        current_ts = int(time.time())
-                        if abs(current_ts - meas_time) > 86400:
-                            print(f"WAQI data for {city_key} is stale ({abs(current_ts - meas_time)}s old). Reverting to fallback.")
+                        import time as _time
+                        current_ts = int(_time.time())
+                        age_s = abs(current_ts - meas_time)
+                        if age_s > 10800:
+                            city_key = get_nearest_live_city(lat, lng)
+                            print(f"WAQI data for {city_key} is stale ({age_s}s old). Reverting to fallback.")
                             return None
 
                     city_name = aq_data.get("city", {}).get("name", "WAQI Station")
                     iaqi = aq_data.get("iaqi", {})
-                    
-                    # Read US-EPA AQI sub-indices from WAQI response
-                    pm25_aqi = iaqi.get("pm25", {}).get("v", 0.0)
-                    pm10_aqi = iaqi.get("pm10", {}).get("v", 0.0)
-                    no2_aqi = iaqi.get("no2", {}).get("v", 0.0)
-                    so2_aqi = iaqi.get("so2", {}).get("v", 0.0)
-                    co_aqi = iaqi.get("co", {}).get("v", 0.0)
-                    o3_aqi = iaqi.get("o3", {}).get("v", 0.0)
-                    
-                    # Define US-EPA Breakpoints
-                    PM25_USEPA = [(0.0, 12.0, 0, 50), (12.1, 35.4, 51, 100), (35.5, 55.4, 101, 150), (55.5, 150.4, 151, 200), (150.5, 250.4, 201, 300), (250.5, 350.4, 301, 400), (350.5, 500.4, 401, 500)]
-                    PM10_USEPA = [(0, 54, 0, 50), (55, 154, 51, 100), (155, 254, 101, 150), (255, 354, 151, 200), (355, 424, 201, 300), (425, 504, 301, 400), (505, 604, 401, 500)]
-                    NO2_USEPA = [(0, 53, 0, 50), (54, 100, 51, 100), (101, 360, 101, 150), (361, 649, 151, 200), (650, 1249, 201, 300)]
-                    SO2_USEPA = [(0, 35, 0, 50), (36, 75, 51, 100), (76, 185, 101, 150), (186, 304, 151, 200)]
-                    CO_USEPA = [(0.0, 4.4, 0, 50), (4.5, 9.4, 51, 100), (9.5, 12.4, 101, 150), (12.5, 15.4, 151, 200), (15.5, 30.4, 201, 300)]
-                    O3_USEPA = [(0, 54, 0, 50), (55, 70, 51, 100), (71, 85, 101, 150), (86, 105, 151, 200), (106, 200, 201, 300)]
-                    
-                    # Convert to concentrations in appropriate units
-                    pm25_ug = _usepa_aqi_to_concentration(pm25_aqi, PM25_USEPA)
-                    pm10_ug = _usepa_aqi_to_concentration(pm10_aqi, PM10_USEPA)
-                    
-                    # NO2, SO2, O3: Convert US-EPA ppb to µg/m³
-                    no2_ug = _usepa_aqi_to_concentration(no2_aqi, NO2_USEPA) * 1.88 if no2_aqi > 0 else 0.0
-                    so2_ug = _usepa_aqi_to_concentration(so2_aqi, SO2_USEPA) * 2.62 if so2_aqi > 0 else 0.0
-                    o3_ug = _usepa_aqi_to_concentration(o3_aqi, O3_USEPA) * 1.96 if o3_aqi > 0 else 0.0
-                    
-                    # CO: Convert US-EPA ppm to mg/m³ (1 ppm CO = 1.145 mg/m³ at 25C)
-                    co_mg = _usepa_aqi_to_concentration(co_aqi, CO_USEPA) * 1.145 if co_aqi > 0 else 0.0
-                    
-                    # Calculate CPCB Indian AQI
+
+                    # WAQI iaqi values are US-EPA AQI sub-indices — convert back to concentrations
+                    pm25_aqi = iaqi.get("pm25", {}).get("v", 0.0) or 0.0
+                    pm10_aqi = iaqi.get("pm10", {}).get("v", 0.0) or 0.0
+                    no2_aqi  = iaqi.get("no2",  {}).get("v", 0.0) or 0.0
+                    so2_aqi  = iaqi.get("so2",  {}).get("v", 0.0) or 0.0
+                    co_aqi   = iaqi.get("co",   {}).get("v", 0.0) or 0.0
+                    o3_aqi   = iaqi.get("o3",   {}).get("v", 0.0) or 0.0
+
+                    # US-EPA breakpoints for reverse concentration lookup
+                    PM25_BP = [(0.0,12.0,0,50),(12.1,35.4,51,100),(35.5,55.4,101,150),(55.5,150.4,151,200),(150.5,250.4,201,300),(250.5,350.4,301,400),(350.5,500.4,401,500)]
+                    PM10_BP = [(0,54,0,50),(55,154,51,100),(155,254,101,150),(255,354,151,200),(355,424,201,300),(425,504,301,400),(505,604,401,500)]
+                    NO2_BP  = [(0,53,0,50),(54,100,51,100),(101,360,101,150),(361,649,151,200),(650,1249,201,300)]
+                    SO2_BP  = [(0,35,0,50),(36,75,51,100),(76,185,101,150),(186,304,151,200)]
+                    CO_BP   = [(0.0,4.4,0,50),(4.5,9.4,51,100),(9.5,12.4,101,150),(12.5,15.4,151,200),(15.5,30.4,201,300)]
+                    O3_BP   = [(0,54,0,50),(55,70,51,100),(71,85,101,150),(86,105,151,200),(106,200,201,300)]
+
+                    pm25_ug = _usepa_aqi_to_concentration(pm25_aqi, PM25_BP)
+                    pm10_ug = _usepa_aqi_to_concentration(pm10_aqi, PM10_BP)
+                    no2_ug  = _usepa_aqi_to_concentration(no2_aqi,  NO2_BP) * 1.88 if no2_aqi > 0 else 0.0
+                    so2_ug  = _usepa_aqi_to_concentration(so2_aqi,  SO2_BP) * 2.62 if so2_aqi > 0 else 0.0
+                    o3_ug   = _usepa_aqi_to_concentration(o3_aqi,   O3_BP)  * 1.96 if o3_aqi  > 0 else 0.0
+                    co_mg   = _usepa_aqi_to_concentration(co_aqi,   CO_BP)  * 1.145 if co_aqi > 0 else 0.0
+
                     aqi_in = calculate_indian_aqi(pm25_ug, pm10_ug, no2_ug, so2_ug, co_mg, o3_ug)
-                    
+
+                    # Only return if we got meaningful PM data
+                    if pm25_ug < 0.1 and pm10_ug < 0.1:
+                        return None
+
                     return {
-                        "aqi": round(aqi_in, 1),
-                        "pm25": round(pm25_ug, 1),
-                        "pm10": round(pm10_ug, 1),
-                        "no2": round(no2_ug, 1),
-                        "so2": round(so2_ug, 1),
-                        "co": round(co_mg, 2),
-                        "o3": round(o3_ug, 1),
-                        "source": f"waqi (live, station: {city_name})"
+                        "aqi":    round(aqi_in, 1),
+                        "pm25":   round(pm25_ug, 1),
+                        "pm10":   round(pm10_ug, 1),
+                        "no2":    round(no2_ug, 1),
+                        "so2":    round(so2_ug, 1),
+                        "co":     round(co_mg, 2),
+                        "o3":     round(o3_ug, 1),
+                        "source": f"waqi (live, {city_name})"
                     }
     except Exception as e:
-        print("WAQI fetch failed:", e)
+        print(f"WAQI fetch failed for ({lat:.4f},{lng:.4f}): {e}")
     return None
 
 

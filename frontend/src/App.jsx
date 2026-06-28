@@ -2925,7 +2925,7 @@ function EnforcementView({ dispatches, onRefresh, onViewEvidence }) {
                                 {src.distance_km}km
                               </span>
                             </div>
-                          ))
+                          ))}
                         </div>
                       ) : (
                         <div style={{ fontSize: '12px', color: '#64748b' }}>No registered sources within 5km</div>

@@ -97,6 +97,13 @@ async def startup_event():
     # Initialize local SQLite DB
     init_db()
 
+    # Debug: log which API keys are available at startup
+    resend_key = os.environ.get("RESEND_API_KEY")
+    resend_from_env = _get_resend_key_from_env_file()
+    print(f"[STARTUP] RESEND_API_KEY from os.environ: {'SET (len={})'.format(len(resend_key)) if resend_key else 'NOT SET'}")
+    print(f"[STARTUP] RESEND_API_KEY from .env file:  {'SET (len={})'.format(len(resend_from_env)) if resend_from_env else 'NOT SET'}")
+    print(f"[STARTUP] All env keys containing 'RESEND': {[k for k in os.environ if 'RESEND' in k.upper()]}")
+    print(f"[STARTUP] All env keys containing 'API':    {[k for k in os.environ if 'API' in k.upper()]}")
     # Pre-train ALL live cities in the background
     from simulation import LIVE_CITIES
     PARENT_CITIES = [k for k in LIVE_CITIES if "_" not in k]

@@ -298,6 +298,16 @@ async def _fetch_real_aqi_waqi(lat: float, lng: float) -> Optional[Dict[str, Any
                 data = resp.json()
                 if data.get("status") == "ok":
                     aq_data = data.get("data", {})
+                    
+                    # Check if the data is stale (older than 24 hours)
+                    meas_time = aq_data.get("time", {}).get("v")
+                    if meas_time:
+                        import time
+                        current_ts = int(time.time())
+                        if abs(current_ts - meas_time) > 86400:
+                            print(f"WAQI data for {city_key} is stale ({abs(current_ts - meas_time)}s old). Reverting to fallback.")
+                            return None
+
                     city_name = aq_data.get("city", {}).get("name", "WAQI Station")
                     iaqi = aq_data.get("iaqi", {})
                     
@@ -422,6 +432,15 @@ async def _fetch_real_aqi(lat: float, lng: float) -> Optional[Dict[str, Any]]:
                                 s_id = m.get("sensorsId")
                                 val = m.get("value")
                                 if s_id in sensor_map and val is not None:
+                                    # Check staleness (older than 24 hours)
+                                    dt_utc = m.get("datetime", {}).get("utc")
+                                    if dt_utc:
+                                        try:
+                                            dt = datetime.fromisoformat(dt_utc.replace("Z", "+00:00"))
+                                            if (datetime.now(timezone.utc) - dt).total_seconds() > 86400:
+                                                continue
+                                        except Exception:
+                                            continue
                                     param = sensor_map[s_id]
                                     # Normalize parameters
                                     if param == "pm25" or param == "pm2_5":
@@ -762,10 +781,10 @@ class SimulationEngine:
         readings: List[Dict[str, Any]] = []
 
         if city_key == "all":
-            # Only batch fetch cities in LIVE_CITIES to prevent timeouts
+            # Only batch fetch parent cities to prevent timeouts
             keys = list(CITIES.keys())
-            live_keys = [k for k in keys if k in LIVE_CITIES]
-            other_keys = [k for k in keys if k not in LIVE_CITIES]
+            live_keys = [k for k in keys if k in LIVE_CITIES and "_" not in k]
+            other_keys = [k for k in keys if k not in LIVE_CITIES or "_" in k]
             
             # Fetch WAQI/OpenAQ ground-truth data in parallel (with concurrency limit)
             import asyncio
@@ -919,9 +938,21 @@ class SimulationEngine:
                     live_readings_map[k] = r_entry
 
             # Process other cities using nearest-neighbor fallback
+            active_keys = list(live_readings_map.keys())
             for k in other_keys:
                 lat, lng = CITIES[k]["center"]
-                nearest_key = get_nearest_live_city(lat, lng)
+                
+                # Find nearest key among active_keys
+                nearest_key = "delhi"
+                if active_keys:
+                    min_dist = float('inf')
+                    for ak in active_keys:
+                        clat, clng = CITIES[ak]["center"]
+                        dist = (lat - clat)**2 + (lng - clng)**2
+                        if dist < min_dist:
+                            min_dist = dist
+                            nearest_key = ak
+                
                 ref_reading = live_readings_map.get(nearest_key)
 
                 if ref_reading:

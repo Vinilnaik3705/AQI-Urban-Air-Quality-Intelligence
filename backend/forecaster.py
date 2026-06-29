@@ -18,7 +18,8 @@ class AQIForecaster:
         self._retrain_interval = timedelta(hours=6)
 
     async def get_historical_data(self, lat: float, lng: float, days: int = 14) -> Optional[Dict[str, List[float]]]:
-        """Fetch historical air quality and weather data from Open-Meteo."""
+        """Fetch historical air quality and weather data from Open-Meteo.
+        Includes retry logic with exponential backoff for 429 rate limiting."""
         end_date = datetime.now() - timedelta(days=1)
         start_date = end_date - timedelta(days=days)
         start_str = start_date.strftime("%Y-%m-%d")
@@ -42,16 +43,33 @@ class AQIForecaster:
             "end_date": end_str
         }
 
+        max_retries = 3
+
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                aq_resp, weather_resp = await asyncio.gather(
-                    client.get(aq_url, params=aq_params),
-                    client.get(weather_url, params=weather_params)
-                )
+                # Fetch AQ data first
+                aq_resp = await client.get(aq_url, params=aq_params)
+                if aq_resp.status_code != 200:
+                    logger.error(f"Failed to fetch AQ historical data. Status: {aq_resp.status_code}")
+                    return None
 
-            if aq_resp.status_code != 200 or weather_resp.status_code != 200:
-                logger.error(f"Failed to fetch historical data from Open-Meteo. AQ status: {aq_resp.status_code}, Weather status: {weather_resp.status_code}")
-                return None
+                # Fetch weather data with retry + backoff for 429
+                weather_resp = None
+                for attempt in range(max_retries):
+                    weather_resp = await client.get(weather_url, params=weather_params)
+                    if weather_resp.status_code == 200:
+                        break
+                    elif weather_resp.status_code == 429:
+                        wait_time = (2 ** attempt) + 1  # 1s, 3s, 5s
+                        logger.warning(f"Weather API rate-limited (429). Retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(wait_time)
+                    else:
+                        logger.error(f"Weather API returned status {weather_resp.status_code}")
+                        return None
+
+                if weather_resp is None or weather_resp.status_code != 200:
+                    logger.error(f"Failed to fetch weather data after {max_retries} retries (429 rate limit)")
+                    return None
 
             aq_data = aq_resp.json().get("hourly", {})
             weather_data = weather_resp.json().get("hourly", {})

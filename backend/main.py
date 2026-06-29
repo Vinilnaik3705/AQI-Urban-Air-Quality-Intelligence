@@ -111,7 +111,7 @@ async def startup_event():
     async def train_all():
         import logging
         log = logging.getLogger("main")
-        batch_size = 5
+        batch_size = 2  # Small batches to avoid Open-Meteo 429 rate limiting
         for i in range(0, len(PARENT_CITIES), batch_size):
             batch = PARENT_CITIES[i:i + batch_size]
             tasks = [forecaster.train_for_city(city) for city in batch]
@@ -119,6 +119,9 @@ async def startup_event():
             for city, res in zip(batch, results):
                 if isinstance(res, Exception):
                     log.error(f"Error training startup model for {city}: {res}")
+            # Stagger batches to respect rate limits
+            if i + batch_size < len(PARENT_CITIES):
+                await asyncio.sleep(2)
     asyncio.create_task(train_all())
 
     # Start the background alert loop

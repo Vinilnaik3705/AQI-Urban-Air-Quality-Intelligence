@@ -384,11 +384,42 @@ def _get_openaq_key() -> Optional[str]:
 
 
 async def _fetch_real_aqi(lat: float, lng: float) -> Optional[Dict[str, Any]]:
-    """Fetch real-time air quality. Attempts to use WAQI first, then OpenAQ, falling back to Open-Meteo."""
-    # 1. Attempt WAQI
-    waqi_data = await _fetch_real_aqi_waqi(lat, lng)
-    if waqi_data:
-        return waqi_data
+    """Fetch real-time air quality. Attempts to use Open-Meteo first, then OpenAQ, falling back to WAQI."""
+    # 1. Attempt Open-Meteo CAMS Air Quality API
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(AQ_API_URL, params={
+                "latitude": lat,
+                "longitude": lng,
+                "current": "pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone",
+            })
+            if resp.status_code == 200:
+                data = resp.json().get("current", {})
+                raw_pm25 = data.get("pm2_5", 0)
+                raw_pm10 = data.get("pm10", 0)
+                factor = get_indian_seasonal_calibration(lat, lng)
+                gas_factor = max(0.5, factor) if factor < 1.0 else factor
+                
+                pm25 = raw_pm25 * factor
+                pm10 = raw_pm10 * factor
+                no2 = data.get("nitrogen_dioxide", 0) * gas_factor
+                so2 = data.get("sulphur_dioxide", 0) * gas_factor
+                co = (data.get("carbon_monoxide", 0) * gas_factor) / 1000.0
+                o3 = data.get("ozone", 0) * gas_factor
+                
+                aqi_val = calculate_indian_aqi(pm25, pm10, no2, so2, co, o3)
+                return {
+                    "aqi": round(aqi_val, 1),
+                    "pm25": round(pm25, 1),
+                    "pm10": round(pm10, 1),
+                    "no2": round(no2, 1),
+                    "so2": round(so2, 1),
+                    "co": round(co, 2),
+                    "o3": round(o3, 1),
+                    "source": "open-meteo (live)",
+                }
+    except Exception as e:
+        print("Open-Meteo CAMS request failed, falling back to other APIs:", e)
 
     # 2. Attempt OpenAQ v3
     api_key = _get_openaq_key()
@@ -492,43 +523,13 @@ async def _fetch_real_aqi(lat: float, lng: float) -> Optional[Dict[str, Any]]:
                                     "source": f"openaq-v3 (live, station: {closest_loc.get('name')})"
                                 }
         except Exception as e:
-            print("OpenAQ v3 request failed, falling back to Open-Meteo:", e)
+            print("OpenAQ v3 request failed, falling back to WAQI:", e)
 
-    # 2. Fallback to Open-Meteo CAMS Air Quality API
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(AQ_API_URL, params={
-                "latitude": lat,
-                "longitude": lng,
-                "current": "pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone",
-            })
-            if resp.status_code == 200:
-                data = resp.json().get("current", {})
-                raw_pm25 = data.get("pm2_5", 0)
-                raw_pm10 = data.get("pm10", 0)
-                factor = get_indian_seasonal_calibration(lat, lng)
-                gas_factor = max(0.5, factor) if factor < 1.0 else factor
-                
-                pm25 = raw_pm25 * factor
-                pm10 = raw_pm10 * factor
-                no2 = data.get("nitrogen_dioxide", 0) * gas_factor
-                so2 = data.get("sulphur_dioxide", 0) * gas_factor
-                co = (data.get("carbon_monoxide", 0) * gas_factor) / 1000.0
-                o3 = data.get("ozone", 0) * gas_factor
-                
-                aqi_val = calculate_indian_aqi(pm25, pm10, no2, so2, co, o3)
-                return {
-                    "aqi": round(aqi_val, 1),
-                    "pm25": round(pm25, 1),
-                    "pm10": round(pm10, 1),
-                    "no2": round(no2, 1),
-                    "so2": round(so2, 1),
-                    "co": round(co, 2),
-                    "o3": round(o3, 1),
-                    "source": "open-meteo (live)",
-                }
-    except Exception:
-        pass
+    # 3. Attempt WAQI
+    waqi_data = await _fetch_real_aqi_waqi(lat, lng)
+    if waqi_data:
+        return waqi_data
+
     return None
 
 
@@ -802,28 +803,6 @@ class SimulationEngine:
             live_keys = [k for k in keys if k in LIVE_CITIES and "_" not in k]
             other_keys = [k for k in keys if k not in LIVE_CITIES or "_" in k]
             
-            # Fetch WAQI/OpenAQ ground-truth data in parallel (with concurrency limit)
-            import asyncio
-            sem = asyncio.Semaphore(5)
-            async def get_ground_truth(k, lat, lng):
-                async with sem:
-                    # 1. Try WAQI
-                    res = await _fetch_real_aqi_waqi(lat, lng)
-                    if res:
-                        return k, res
-                    # 2. Try OpenAQ
-                    res = await _fetch_real_aqi(lat, lng)
-                    if res:
-                        return k, res
-                    return k, None
-
-            ground_truth_results = {}
-            calls = [get_ground_truth(k, CITIES[k]["center"][0], CITIES[k]["center"][1]) for k in live_keys]
-            fetched = await asyncio.gather(*calls)
-            for k, res in fetched:
-                if res:
-                    ground_truth_results[k] = res
-
             # Divide live keys into batches of 40 to avoid slow Open-Meteo responses
             batch_size = 40
             batches = [live_keys[i:i + batch_size] for i in range(0, len(live_keys), batch_size)]
@@ -842,7 +821,7 @@ class SimulationEngine:
                     if resp.status_code == 200:
                         return resp.json()
                 return []
-
+ 
             live_readings_map = {}
             try:
                 results_batches = await asyncio.gather(*(fetch_batch(b) for b in batches), return_exceptions=True)
@@ -850,10 +829,11 @@ class SimulationEngine:
                 for batch_keys, batch_result in zip(batches, results_batches):
                     if isinstance(batch_result, Exception) or not batch_result:
                         print("Error fetching batch:", batch_result)
-                        # Fallback for this batch
+                        # Fallback for this batch on-demand
                         for k in batch_keys:
-                            if k in ground_truth_results:
-                                aq_data = ground_truth_results[k]
+                            lat_k, lng_k = CITIES[k]["center"]
+                            aq_data = await _fetch_real_aqi(lat_k, lng_k)
+                            if aq_data:
                                 pollutants = {
                                     "pm25": aq_data["pm25"], "pm10": aq_data["pm10"], "no2": aq_data["no2"],
                                     "so2": aq_data["so2"], "co": aq_data["co"], "o3": aq_data["o3"]
@@ -886,41 +866,28 @@ class SimulationEngine:
                         ws = rng_wind.uniform(1.5, 6.0)  # wind speed in m/s
                         wd = rng_wind.uniform(0.0, 360.0)  # wind direction in degrees
                         self._cache[f"wind_{k}"] = (ws, wd)
-
-                        if k in ground_truth_results:
-                            aq_data = ground_truth_results[k]
-                            pollutants = {
-                                "pm25": aq_data["pm25"],
-                                "pm10": aq_data["pm10"],
-                                "no2": aq_data["no2"],
-                                "so2": aq_data["so2"],
-                                "co": aq_data["co"],
-                                "o3": aq_data["o3"],
-                            }
-                            aqi_in = aq_data["aqi"]
-                            source = aq_data["source"]
-                        else:
-                            curr = item.get("current", {})
-                            pm25 = curr.get("pm2_5", 25.0)
-                            pm10 = curr.get("pm10", 50.0)
-                            lat_k, lng_k = CITIES[k]["center"]
-                            factor = get_indian_seasonal_calibration(lat_k, lng_k)
-                            gas_factor = max(0.5, factor) if factor < 1.0 else factor
-
-                            pollutants = {
-                                "pm25": round(pm25 * factor, 1),
-                                "pm10": round(pm10 * factor, 1),
-                                "no2": max(0.0, round(curr.get("nitrogen_dioxide", 20.0) * gas_factor, 1)),
-                                "so2": max(0.0, round(curr.get("sulphur_dioxide", 5.0) * gas_factor, 1)),
-                                "co": max(0.0, round(((curr.get("carbon_monoxide", 300.0) * gas_factor) / 1000.0), 2)),
-                                "o3": max(0.0, round(curr.get("ozone", 30.0) * gas_factor, 1)),
-                            }
-
-                            aqi_in = calculate_indian_aqi(
-                                pollutants["pm25"], pollutants["pm10"], pollutants["no2"],
-                                pollutants["so2"], pollutants["co"], pollutants["o3"]
-                            )
-                            source = "open-meteo (live)"
+ 
+                        curr = item.get("current", {})
+                        pm25 = curr.get("pm2_5", 25.0)
+                        pm10 = curr.get("pm10", 50.0)
+                        lat_k, lng_k = CITIES[k]["center"]
+                        factor = get_indian_seasonal_calibration(lat_k, lng_k)
+                        gas_factor = max(0.5, factor) if factor < 1.0 else factor
+ 
+                        pollutants = {
+                            "pm25": round(pm25 * factor, 1),
+                            "pm10": round(pm10 * factor, 1),
+                            "no2": max(0.0, round(curr.get("nitrogen_dioxide", 20.0) * gas_factor, 1)),
+                            "so2": max(0.0, round(curr.get("sulphur_dioxide", 5.0) * gas_factor, 1)),
+                            "co": max(0.0, round(((curr.get("carbon_monoxide", 300.0) * gas_factor) / 1000.0), 2)),
+                            "o3": max(0.0, round(curr.get("ozone", 30.0) * gas_factor, 1)),
+                        }
+ 
+                        aqi_in = calculate_indian_aqi(
+                            pollutants["pm25"], pollutants["pm10"], pollutants["no2"],
+                            pollutants["so2"], pollutants["co"], pollutants["o3"]
+                        )
+                        source = "open-meteo (live)"
 
                         r_entry = {
                             "sensor_id": f"SENSOR_{k}",

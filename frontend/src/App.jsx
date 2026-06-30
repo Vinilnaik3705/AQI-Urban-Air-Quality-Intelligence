@@ -2656,54 +2656,16 @@ function AttributionView({ state, attribution, loading, onClickLocation, mapStyl
 /* ── Enforcement View ──────────────────────────────────────────────────── */
 
 function EnforcementView({ dispatches, onRefresh, onViewEvidence }) {
-  const [statusMap, setStatusMap] = useState({})
+  const [activeTab, setActiveTab] = useState('overview')
   const [filter, setFilter] = useState('all')
   const [scanning, setScanning] = useState(false)
-
-  const SEVERITY_CONFIG = {
-    severe:    { color: '#ef4444', bg: 'rgba(239,68,68,0.06)',    label: 'SEVERE',    icon: 'AlertCircle' },
-    very_poor: { color: '#f97316', bg: 'rgba(249,115,22,0.05)',   label: 'VERY POOR', icon: 'AlertTriangle' },
-    poor:      { color: '#eab308', bg: 'rgba(234,179,8,0.05)',    label: 'POOR',      icon: 'Info' },
-  }
-
-  const STATUS_CONFIG = {
-    pending:    { color: '#64748b', label: 'Pending' },
-    dispatched: { color: '#3b82f6', label: 'Dispatched' },
-    resolved:   { color: '#22c55e', label: 'Resolved' },
-  }
-
-  const setStatus = (wardId, status) =>
-    setStatusMap(prev => ({ ...prev, [wardId]: status }))
-
-  const getStatus = (wardId, defaultStatus) =>
-    statusMap[wardId] || defaultStatus || 'pending'
-
-  const allDispatches = dispatches?.dispatches || []
-  const filtered = filter === 'all' ? allDispatches
-    : allDispatches.filter(d => d.severity === filter)
-
-  const SOURCE_ICONS = {
-    industrial:    <Factory size={13} color="#ef4444" style={{ marginRight: '4px', verticalAlign: 'middle' }} />,
-    vehicular:     <Car size={13} color="#3b82f6" style={{ marginRight: '4px', verticalAlign: 'middle' }} />,
-    construction:  <Hammer size={13} color="#f59e0b" style={{ marginRight: '4px', verticalAlign: 'middle' }} />,
-    waste_burning: <Flame size={13} color="#10b981" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-  }
-
-  const formatIST = (isoString) => {
-    if (!isoString) return '—';
-    try {
-      const d = new Date(isoString);
-      return d.toLocaleString('en-IN', {
-        timeZone: 'Asia/Kolkata',
-        hour12: true,
-        hour: 'numeric',
-        minute: '2-digit',
-        second: '2-digit'
-      }) + ' IST';
-    } catch(e) {
-      return isoString;
-    }
-  }
+  const [checklist, setChecklist] = useState({
+    water_sprinkling: true,
+    smog_guns: false,
+    traffic_diversions: true,
+    const_ban: false,
+    dg_sets_ban: false,
+  })
 
   const handleRescan = async () => {
     setScanning(true)
@@ -2711,340 +2673,491 @@ function EnforcementView({ dispatches, onRefresh, onViewEvidence }) {
     setTimeout(() => setScanning(false), 1800)
   }
 
+  const allDispatches = dispatches?.dispatches || []
+  const filtered = filter === 'all' ? allDispatches
+    : allDispatches.filter(d => d.severity === filter)
+
+  // Calculate metrics
+  const totalWards = 37
+  const activeSensors = 148
+  const avgAqi = allDispatches.length > 0
+    ? Math.round(allDispatches.reduce((acc, curr) => acc + curr.aqi, 0) / allDispatches.length)
+    : 87;
+
   return (
-    <div style={{ padding: '0', marginTop: '24px' }}>
-
-      {/* ── Hero Header Section ──────────────────────────────── */}
+    <div style={{ padding: '0', marginTop: '24px', fontFamily: 'inherit' }}>
+      
+      {/* ── 1. Top Metadata Row ── */}
       <div style={{
-        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #334155 100%)',
-        borderRadius: '16px',
-        padding: '32px 36px',
-        marginBottom: '24px',
-        position: 'relative',
-        overflow: 'hidden'
+        background: '#ffffff',
+        borderRadius: '12px',
+        border: '1px solid #e2e8f0',
+        padding: '16px 24px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '20px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
       }}>
-        {/* Decorative pattern */}
-        <div style={{ position: 'absolute', top: 0, right: 0, width: '300px', height: '100%', opacity: 0.04, background: 'repeating-linear-gradient(45deg, #fff 0px, #fff 1px, transparent 1px, transparent 12px)', pointerEvents: 'none' }} />
+        <div>
+          <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase' }}>Zone ID</div>
+          <div style={{ fontSize: '15px', fontWeight: '750', color: '#1e293b', marginTop: '4px' }}>#DELHI-NCR</div>
+        </div>
+        <div style={{ height: '32px', width: '1px', background: '#e2e8f0' }} />
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', position: 'relative', zIndex: 1 }}>
-          <div>
-            <div style={{ fontSize: '11px', fontWeight: '700', color: '#ef4444', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Shield size={14} color="#ef4444" />
-              <span>Enforcement Intelligence</span>
-            </div>
-            <h2 style={{ fontSize: '32px', fontWeight: '850', color: '#f8fafc', lineHeight: '1.1', letterSpacing: '-0.5px', margin: 0 }}>
-              Enforcement that<br /><span style={{ color: '#ef4444' }}>saves lives.</span>
-            </h2>
-            <p style={{ fontSize: '14px', color: '#94a3b8', marginTop: '10px', fontWeight: '500', maxWidth: '480px', lineHeight: '1.5' }}>
-              AI-prioritised inspector dispatch recommendations with evidence packages. Real-time hotspot monitoring across all zones.
-            </p>
-            {dispatches && dispatches.generated_at && (
-              <div style={{ fontSize: '12px', color: '#10b981', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px' }}>
-                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', animation: 'pulse-dot 2s ease infinite' }} />
-                <span>Last Scanned: {formatIST(dispatches.generated_at)}</span>
-              </div>
-            )}
-          </div>
+        <div>
+          <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase' }}>Monitor Stations</div>
+          <div style={{ fontSize: '15px', fontWeight: '750', color: '#1e293b', marginTop: '4px' }}>{totalWards} Wards Active</div>
+        </div>
+        <div style={{ height: '32px', width: '1px', background: '#e2e8f0' }} />
 
-          {/* Modern Re-scan Button */}
-          <button
-            onClick={handleRescan}
-            disabled={scanning}
-            className="rescan-btn"
-            style={{
-              background: scanning ? 'linear-gradient(135deg, #1e293b 0%, #334155 100%)' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-              color: '#ffffff',
-              border: scanning ? '1px solid #475569' : '1px solid rgba(255,255,255,0.1)',
-              borderRadius: '14px',
-              padding: '12px 24px',
-              cursor: scanning ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontWeight: '700',
-              fontSize: '13px',
-              boxShadow: scanning ? 'none' : '0 4px 14px rgba(239, 68, 68, 0.35)',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              opacity: scanning ? 0.8 : 1,
-              flexShrink: 0
-            }}
-          >
-            <RefreshCw size={15} style={{ animation: scanning ? 'spin 1s linear infinite' : 'none' }} />
-            <span>{scanning ? 'Rescanning...' : 'Re-scan Hotspots'}</span>
-          </button>
+        <div>
+          <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase' }}>Telemetry ID</div>
+          <div style={{ fontSize: '15px', fontWeight: '750', color: '#1e293b', marginTop: '4px' }}>#DL-AQI-2026</div>
+        </div>
+        <div style={{ height: '32px', width: '1px', background: '#e2e8f0' }} />
+
+        <div>
+          <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase' }}>Primary Target</div>
+          <div style={{ fontSize: '15px', fontWeight: '750', color: '#1e293b', marginTop: '4px' }}>PM2.5 Dispersion</div>
+        </div>
+        <div style={{ height: '32px', width: '1px', background: '#e2e8f0' }} />
+
+        <div>
+          <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase' }}>Intervention Model</div>
+          <div style={{ fontSize: '15px', fontWeight: '750', color: '#1e293b', marginTop: '4px' }}>GRAP Phase 2</div>
+        </div>
+        <div style={{ height: '32px', width: '1px', background: '#e2e8f0' }} />
+
+        <div>
+          <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase' }}>Active City</div>
+          <div style={{ fontSize: '15px', fontWeight: '750', color: '#ef4444', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <MapPin size={14} color="#ef4444" /> New Delhi, IN
+          </div>
         </div>
       </div>
 
-      {/* ── Summary Stat Cards ────────────────────────────────── */}
-      {dispatches && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+      {/* ── 2. Premium Tab Bar ── */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        borderBottom: '1px solid #e2e8f0',
+        marginBottom: '20px',
+        paddingBottom: '2px'
+      }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
           {[
-            { key: 'all',       label: 'Total Hotspots',   count: dispatches.total_hotspots,         color: '#3b82f6', icon: <Zap size={18} /> },
-            { key: 'severe',    label: 'Severe',            count: dispatches.severe_count || 0,      color: '#ef4444', icon: <AlertCircle size={18} /> },
-            { key: 'very_poor', label: 'Very Poor',         count: dispatches.very_poor_count || 0,   color: '#f97316', icon: <AlertTriangle size={18} /> },
-            { key: 'poor',      label: 'Poor',              count: dispatches.poor_count || 0,        color: '#eab308', icon: <Info size={18} /> },
-          ].map(s => (
-            <button key={s.key} onClick={() => setFilter(s.key)}
+            { id: 'overview', label: 'Overview' },
+            { id: 'dispatches', label: 'Active Dispatches' },
+            { id: 'targets', label: 'Targets & Limits' },
+            { id: 'configuration', label: 'Configuration' },
+            { id: 'checklist', label: 'PM Checklist' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
               style={{
-                padding: '20px',
-                borderRadius: '14px',
+                padding: '8px 16px',
+                border: 'none',
+                background: 'none',
+                fontSize: '13.5px',
+                fontWeight: activeTab === tab.id ? '700' : '550',
+                color: activeTab === tab.id ? '#1e3a8a' : '#64748b',
                 cursor: 'pointer',
-                background: filter === s.key ? '#ffffff' : '#f8fafc',
-                border: filter === s.key ? `2px solid ${s.color}` : '1px solid #e2e8f0',
-                textAlign: 'left',
-                transition: 'all 0.2s ease',
-                boxShadow: filter === s.key ? `0 4px 12px ${s.color}20` : '0 1px 3px rgba(0,0,0,0.04)',
                 position: 'relative',
-                overflow: 'hidden'
-              }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div>
-                  <div style={{ fontSize: '32px', fontWeight: '850', color: s.color, lineHeight: '1', letterSpacing: '-1px' }}>{s.count}</div>
-                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginTop: '6px' }}>{s.label}</div>
-                </div>
-                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: `${s.color}10`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: s.color }}>
-                  {s.icon}
-                </div>
-              </div>
+                transition: 'all 0.2s ease'
+              }}
+            >
+              {tab.label}
+              {activeTab === tab.id && (
+                <div style={{
+                  position: 'absolute',
+                  bottom: '-3px',
+                  left: '16px',
+                  right: '16px',
+                  height: '2px',
+                  background: '#1e3a8a',
+                  borderRadius: '2px'
+                }} />
+              )}
             </button>
           ))}
         </div>
-      )}
 
-      {/* ── AQI Reference Scale ─────────────────── */}
-      <div style={{ marginBottom: '24px', background: '#0f172a', borderRadius: '14px', overflow: 'hidden', border: '1px solid #1e293b' }}>
-        {/* Gradient color bar */}
-        <div style={{ height: '36px', display: 'flex', fontFamily: 'inherit' }}>
-          {[
-            { from: 0,   to: 50,  color: '#10b981', label: '0' },
-            { from: 50,  to: 100, color: '#eab308', label: '50' },
-            { from: 100, to: 200, color: '#f97316', label: '100' },
-            { from: 200, to: 300, color: '#ef4444', label: '200' },
-            { from: 300, to: 400, color: '#a855f7', label: '300' },
-            { from: 400, to: 500, color: '#991b1b', label: '400' },
-          ].map((band, i) => {
-            const width = ((band.to - band.from) / 500) * 100;
-            return (
-              <div key={i} style={{ flex: `0 0 ${width}%`, background: band.color, display: 'flex', alignItems: 'center', justifyContent: 'flex-start', paddingLeft: '10px', position: 'relative' }}>
-                <span style={{ fontSize: '12px', fontWeight: '800', color: i < 2 ? '#000' : '#fff', whiteSpace: 'nowrap' }}>{band.label}</span>
-              </div>
-            );
-          })}
-          <div style={{ flex: '0 0 0%', position: 'relative' }}>
-            <span style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '12px', fontWeight: '800', color: '#fff', whiteSpace: 'nowrap' }}>500+</span>
-          </div>
-        </div>
+        {/* Action button */}
+        <button
+          onClick={handleRescan}
+          disabled={scanning}
+          style={{
+            background: scanning ? '#475569' : '#1e3a8a',
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: '8px',
+            padding: '6px 14px',
+            cursor: scanning ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontWeight: '700',
+            fontSize: '12px',
+            boxShadow: '0 2px 8px rgba(30, 58, 138, 0.15)',
+            transition: 'all 0.2s'
+          }}
+        >
+          <RefreshCw size={13} style={{ animation: scanning ? 'spin 1s linear infinite' : 'none' }} />
+          <span>{scanning ? 'Rescanning...' : 'Scan Wards'}</span>
+        </button>
       </div>
 
-      {/* ── Hotspot Cards ──────────────────────────────────────── */}
-      <div style={{ background: '#ffffff', borderRadius: '14px', border: '1px solid var(--border)', padding: '24px' }}>
-        <div style={{ fontSize: '14px', fontWeight: '750', color: '#0f172a', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Activity size={16} color="#ef4444" />
-          <span>Active Hotspot Dispatches</span>
-          <span style={{ marginLeft: 'auto', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>{filtered.length} zone{filtered.length !== 1 ? 's' : ''}</span>
-        </div>
-
-        {filtered.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {filtered.map((d, i) => {
-              const sev = SEVERITY_CONFIG[d.severity] || SEVERITY_CONFIG.poor
-              const status = getStatus(d.ward_id, d.status)
-              const stCfg = STATUS_CONFIG[status]
-              const globalRank = allDispatches.findIndex(x => x.ward_id === d.ward_id) + 1
-
-              return (
-                <div key={i} style={{
-                  borderRadius: '16px',
-                  border: '1px solid #e2e8f0',
-                  background: '#ffffff',
-                  borderLeft: `6px solid ${sev.color}`,
-                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.03)',
-                  overflow: 'hidden',
-                  transition: 'all 0.2s ease'
-                }}>
-
-                  {/* Card header row */}
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '14px',
-                    padding: '18px 20px',
-                    borderBottom: '1px solid #f1f5f9',
-                    background: '#f8fafc'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: 0 }}>
-                      {/* Rank badge */}
-                      <div style={{ width: '38px', height: '38px', borderRadius: '10px',
-                        background: `${sev.color}12`, border: `2px solid ${sev.color}25`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: '14px', fontWeight: '850', color: sev.color, flexShrink: 0 }}>
-                        #{globalRank}
-                      </div>
-
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: '16px', fontWeight: '800', color: '#0f172a',
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {d.ward_name}
-                        </div>
-                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <MapPin size={11} color="#64748b" /> 
-                          <span>Coordinates: {d.location[0].toFixed(5)}, {d.location[1].toFixed(5)}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Header Metrics */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
-                      {/* AQI display */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '24px', fontWeight: '900', color: aqiColor(d.aqi), lineHeight: 1 }}>
-                            {Math.round(d.aqi)}
-                          </div>
-                          <div style={{ fontSize: '9px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>AQI Index</div>
-                        </div>
-                        <div style={{
-                          padding: '5px 12px',
-                          borderRadius: '8px',
-                          fontSize: '10.5px',
-                          fontWeight: '800',
-                          color: sev.color,
-                          background: `${sev.color}12`,
-                          border: `1px solid ${sev.color}25`,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px'
-                        }}>
-                          {sev.label}
-                        </div>
-                      </div>
-
-                      {/* Priority pill */}
-                      <div style={{
-                        padding: '6px 12px',
-                        borderRadius: '10px',
-                        background: '#f1f5f9',
-                        border: '1px solid #e2e8f0',
-                        textAlign: 'center',
-                        minWidth: '85px'
-                      }}>
-                        <div style={{ fontSize: '9px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Priority</div>
-                        <div style={{ fontSize: '14px', fontWeight: '850', color: '#3b82f6', marginTop: '1px' }}>{Math.round(d.priority_score)}</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Card body */}
-                  <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-
-                    {/* Left Panel: Pollutants and breaches */}
-                    <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-                      {d.dominant_pollutant && (
-                        <div style={{ marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '700' }}>
-                            Dominant Pollutant:
-                          </span>
-                          <span style={{ fontSize: '13px', fontWeight: '800', color: '#0f172a', background: '#e2e8f0', padding: '3px 8px', borderRadius: '6px' }}>
-                            {d.dominant_pollutant}
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Limit breaches list */}
-                      {d.pollutant_exceedances?.length > 0 ? (
-                        <div>
-                          <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px', fontWeight: '700' }}>
-                            Limit Breaches
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            {d.pollutant_exceedances.map((exc, j) => (
-                              <div key={j} style={{ fontSize: '12.5px', color: '#dc2626', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <AlertTriangle size={12} color="#ef4444" />
-                                <span>{exc}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: '12px', color: '#64748b' }}>No pollutant limit breaches detected.</div>
-                      )}
-                    </div>
-
-                    {/* Right Panel: Registered sources nearby */}
-                    <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-                      <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px', fontWeight: '700' }}>
-                        Registered Sources Nearby
-                      </div>
-                      {d.nearby_sources.length > 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          {d.nearby_sources.slice(0, 3).map((src, j) => (
-                            <div key={j} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#334155' }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', color: '#3b82f6' }}>
-                                {src.category === 'industrial' ? <Factory size={13} color="#ef4444" /> :
-                                 src.category === 'vehicular' ? <Car size={13} color="#3b82f6" /> :
-                                 src.category === 'construction' ? <Hammer size={13} color="#f59e0b" /> :
-                                 src.category === 'waste_burning' ? <Flame size={13} color="#10b981" /> :
-                                 <MapPin size={13} color="#64748b" />}
-                              </span>
-                              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: '600' }}>
-                                {src.name}
-                              </span>
-                              <span style={{ background: '#e2e8f0', color: '#475569', fontSize: '10.5px', fontWeight: '700', padding: '2px 6px', borderRadius: '5px', flexShrink: 0 }}>
-                                {src.distance_km}km
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: '12px', color: '#64748b' }}>No registered sources within 5km</div>
-                      )}
-
-                      {/* Vulnerability flags */}
-                      {d.vulnerability_flags?.length > 0 && (
-                        <div style={{ marginTop: '12px', borderTop: '1px solid #e2e8f0', paddingTop: '10px' }}>
-                          {d.vulnerability_flags.slice(0, 2).map((flag, j) => (
-                            <div key={j} style={{ fontSize: '11px', color: '#d97706', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '3px' }}>
-                              <Users size={11} color="#f59e0b" />
-                              <span>{flag}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Recommended actions strip */}
-                  {d.recommended_actions?.length > 0 && (
-                    <div style={{ borderTop: '1px solid #f1f5f9', padding: '12px 20px',
-                      background: '#fafbfc', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      {d.recommended_actions.map((a, j) => (
-                        <div key={j} style={{ fontSize: '11px', color: '#475569',
-                          background: '#ffffff', borderRadius: '8px', fontWeight: '600',
-                          padding: '5px 10px', border: '1px solid #e2e8f0' }}>
-                          {a}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+      {/* ── 3. Tab Contents ── */}
+      {activeTab === 'overview' && (
+        <>
+          {/* Five stats cards with inline sparklines/mini charts */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', marginBottom: '20px' }}>
+            
+            {/* Card 1: Avg City AQI */}
+            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '120px' }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b', fontWeight: '600' }}>
+                  <span>Avg City AQI</span>
+                  <span style={{ color: '#22c55e', display: 'flex', alignItems: 'center' }}><ArrowUpRight size={10} /> 3%</span>
                 </div>
-              )
-            })}
-          </div>
-        ) : (
-          <div style={{ textAlign: 'center', padding: '60px 40px', background: '#f8fafc', borderRadius: '14px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-              <div style={{ background: 'rgba(34, 197, 94, 0.1)', padding: '14px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <CheckCircle size={32} color="#22c55e" />
+                <div style={{ fontSize: '28px', fontWeight: '800', color: '#1e293b', marginTop: '6px' }}>{avgAqi}</div>
+              </div>
+              <div style={{ marginTop: '10px' }}>
+                <svg width="100%" height="24" viewBox="0 0 100 24">
+                  <path d="M 0 18 Q 20 8, 40 16 T 80 4 T 100 12" fill="none" stroke="#22c55e" strokeWidth="1.5" />
+                  <circle cx="100" cy="12" r="2" fill="#22c55e" />
+                </svg>
               </div>
             </div>
-            <p style={{ margin: 0, color: '#475569', fontSize: '14px', fontWeight: '600' }}>
-              {filter === 'all'
-                ? 'No enforcement hotspots detected. All zones within safe limits.'
-                : `No ${filter.replace('_', ' ')} hotspots currently.`}
-            </p>
+
+            {/* Card 2: Active Hotspots */}
+            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '120px' }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b', fontWeight: '600' }}>
+                  <span>Active Hotspots</span>
+                  <span style={{ color: '#3b82f6', display: 'flex', alignItems: 'center' }}><TrendingUp size={10} /> {allDispatches.length}</span>
+                </div>
+                <div style={{ fontSize: '28px', fontWeight: '800', color: '#1e293b', marginTop: '6px' }}>{allDispatches.length}</div>
+              </div>
+              <div style={{ marginTop: '10px', display: 'flex', gap: '3px', alignItems: 'flex-end', height: '24px' }}>
+                {[12, 16, 8, 14, 18, 10, 22, 15, 20, 24].map((h, idx) => (
+                  <div key={idx} style={{ flex: 1, height: `${h}%`, background: '#3b82f6', borderRadius: '1px' }} />
+                ))}
+              </div>
+            </div>
+
+            {/* Card 3: Pollutant Concentration */}
+            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '120px' }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b', fontWeight: '600' }}>
+                  <span>PM2.5 Conc.</span>
+                  <span style={{ color: '#64748b' }}>→ 0</span>
+                </div>
+                <div style={{ fontSize: '28px', fontWeight: '800', color: '#1e293b', marginTop: '6px' }}>84 <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>µg/m³</span></div>
+              </div>
+              <div style={{ marginTop: '10px' }}>
+                <svg width="100%" height="24" viewBox="0 0 100 24">
+                  <path d="M0 20 L 10 20 L 10 16 L 30 16 L 30 10 L 50 10 L 50 8 L 70 8 L 70 4 L 100 4" fill="none" stroke="#6366f1" strokeWidth="1.5" />
+                </svg>
+              </div>
+            </div>
+
+            {/* Card 4: Dispersion Index */}
+            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '120px' }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b', fontWeight: '600' }}>
+                  <span>Dispersion Index</span>
+                  <span style={{ color: '#ef4444', display: 'flex', alignItems: 'center' }}><TrendingUp size={10} style={{ transform: 'rotate(90deg)' }} /> -2%</span>
+                </div>
+                <div style={{ fontSize: '28px', fontWeight: '800', color: '#1e293b', marginTop: '6px' }}>12%</div>
+              </div>
+              <div style={{ marginTop: '10px' }}>
+                <svg width="100%" height="24" viewBox="0 0 100 24">
+                  <path d="M 0 6 Q 25 8, 50 16 T 100 22" fill="none" stroke="#ef4444" strokeWidth="1.5" />
+                </svg>
+              </div>
+            </div>
+
+            {/* Card 5: Wind & Temperature */}
+            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '120px' }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b', fontWeight: '600' }}>
+                  <span>Wind / Temp</span>
+                  <span style={{ color: '#3b82f6' }}>14 km/h</span>
+                </div>
+                <div style={{ fontSize: '28px', fontWeight: '800', color: '#1e293b', marginTop: '6px' }}>32°C</div>
+              </div>
+              <div style={{ marginTop: '10px' }}>
+                <svg width="100%" height="24" viewBox="0 0 100 24">
+                  <path d="M 0 12 Q 10 4, 20 12 T 40 12 T 60 12 T 80 12 T 100 12" fill="none" stroke="#3b82f6" strokeWidth="1.5" />
+                </svg>
+              </div>
+            </div>
+
           </div>
-        )}
-      </div>
+
+          {/* Downtime timeline style element: Air Quality Timeline (Last 24h) */}
+          <div style={{
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '12px',
+            padding: '20px',
+            marginBottom: '20px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+          }}>
+            <div style={{ fontSize: '13px', fontWeight: '700', color: '#1e293b', marginBottom: '14px' }}>
+              Air Quality Timeline <span style={{ color: '#64748b', fontWeight: '500' }}>last 24h</span>
+            </div>
+            
+            {/* Timeline Segment Bar */}
+            <div style={{ display: 'flex', height: '18px', borderRadius: '4px', overflow: 'hidden', background: '#e2e8f0' }}>
+              <div style={{ flex: '5', background: '#22c55e' }} title="Good (0-50)" />
+              <div style={{ flex: '4', background: '#eab308' }} title="Satisfactory (50-100)" />
+              <div style={{ flex: '3', background: '#ef4444' }} title="Very Poor (200-300)" />
+              <div style={{ flex: '1', background: '#22c55e' }} />
+              <div style={{ flex: '2', background: '#ef4444' }} />
+              <div style={{ flex: '3', background: '#22c55e' }} />
+              <div style={{ flex: '6', background: '#22c55e' }} />
+            </div>
+
+            {/* Time labels under timeline */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b', marginTop: '6px' }}>
+              <span>12.00pm</span>
+              <span>4.00pm</span>
+              <span>8.00pm</span>
+              <span>12.00am</span>
+              <span>4.00am</span>
+              <span>8.00am</span>
+              <span>12.00pm (Now)</span>
+            </div>
+          </div>
+
+          {/* Bottom row: distribution, gauge, and MTTR */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1.6fr', gap: '16px' }}>
+            
+            {/* Donut chart layout */}
+            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div style={{ fontSize: '13px', fontWeight: '750', color: '#1e293b', width: '100%', marginBottom: '16px', textAlign: 'left' }}>AQI Category Distribution</div>
+              
+              <div style={{ position: 'relative', width: '120px', height: '120px' }}>
+                <svg width="120" height="120" viewBox="0 0 36 36">
+                  {/* Good: 60% */}
+                  <circle cx="18" cy="18" r="15.915" fill="none" stroke="#22c55e" strokeWidth="3" strokeDasharray="60 40" strokeDashoffset="25" />
+                  {/* Satisfactory: 28% */}
+                  <circle cx="18" cy="18" r="15.915" fill="none" stroke="#eab308" strokeWidth="3" strokeDasharray="28 72" strokeDashoffset="-35" />
+                  {/* Poor/Severe: 12% */}
+                  <circle cx="18" cy="18" r="15.915" fill="none" stroke="#ef4444" strokeWidth="3" strokeDasharray="12 88" strokeDashoffset="-63" />
+                </svg>
+                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: '18px', fontWeight: '850', color: '#1e293b', textAlign: 'center' }}>
+                  60%<br /><span style={{ fontSize: '9px', color: '#64748b', fontWeight: '600' }}>Safe Wards</span>
+                </div>
+              </div>
+
+              {/* Legend */}
+              <div style={{ display: 'flex', gap: '12px', marginTop: '16px', fontSize: '11px', fontWeight: '600' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e' }} />
+                  <span style={{ color: '#475569' }}>Good</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#eab308' }} />
+                  <span style={{ color: '#475569' }}>Moderate</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444' }} />
+                  <span style={{ color: '#475569' }}>Hotspot</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Gauge chart layout */}
+            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div style={{ fontSize: '13px', fontWeight: '750', color: '#1e293b', width: '100%', marginBottom: '16px', textAlign: 'left' }}>Current Wind Speed</div>
+              
+              <div style={{ position: 'relative', width: '120px', height: '100px', overflow: 'hidden' }}>
+                <svg width="120" height="120" viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)' }}>
+                  {/* Gauge Arc */}
+                  <circle cx="50" cy="50" r="40" fill="none" stroke="#e2e8f0" strokeWidth="8" strokeDasharray="125 250" />
+                  <circle cx="50" cy="50" r="40" fill="none" stroke="#22c55e" strokeWidth="8" strokeDasharray="80 250" />
+                  {/* Pointer Needle */}
+                  <line x1="50" y1="50" x2="50" y2="15" stroke="#1e293b" strokeWidth="3" strokeLinecap="round" style={{ transformOrigin: '50px 50px', transform: 'rotate(72deg)', transition: 'all 0.5s' }} />
+                </svg>
+                <div style={{ position: 'absolute', bottom: '0', left: '50%', transform: 'translateX(-50%)', textAlign: 'center', fontSize: '18px', fontWeight: '850', color: '#1e293b' }}>
+                  6.21 <span style={{ fontSize: '11px', color: '#64748b' }}>m/s</span>
+                </div>
+              </div>
+            </div>
+
+            {/* MTTR / MTBF Stats */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              
+              {/* Card 1: MTTR */}
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px 20px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>MTTR (Mean Response Time)</div>
+                <div style={{ fontSize: '20px', fontWeight: '800', color: '#1e293b', marginTop: '6px' }}>
+                  1 <span style={{ fontSize: '12px', color: '#64748b' }}>hour</span> 15 <span style={{ fontSize: '12px', color: '#64748b' }}>minutes</span>
+                </div>
+              </div>
+
+              {/* Card 2: MTBF */}
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px 20px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>MTBF (Mean Clean Interval)</div>
+                <div style={{ fontSize: '20px', fontWeight: '800', color: '#1e293b', marginTop: '6px' }}>
+                  4 <span style={{ fontSize: '12px', color: '#64748b' }}>days</span> 6 <span style={{ fontSize: '12px', color: '#64748b' }}>hours</span>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+        </>
+      )}
+
+      {activeTab === 'dispatches' && (
+        <div style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '20px' }}>
+          {/* Stat Categories Filter */}
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+            {[
+              { id: 'all', label: 'All Hotspots', color: '#3b82f6' },
+              { id: 'severe', label: 'Severe Only', color: '#ef4444' },
+              { id: 'very_poor', label: 'Very Poor Only', color: '#f97316' },
+              { id: 'poor', label: 'Poor Only', color: '#eab308' }
+            ].map(f => (
+              <button
+                key={f.id}
+                onClick={() => setFilter(f.id)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: filter === f.id ? `1.5px solid ${f.color}` : '1px solid #e2e8f0',
+                  background: filter === f.id ? `${f.color}10` : '#ffffff',
+                  color: filter === f.id ? f.color : '#475569',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {filtered.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {filtered.map((d, i) => (
+                <div key={i} style={{ padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: '700', color: '#1e293b', fontSize: '14px' }}>{d.ward_name}</div>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>Dominant: {d.dominant_pollutant}</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '18px', fontWeight: '850', color: d.aqi > 300 ? '#ef4444' : '#f97316' }}>{Math.round(d.aqi)} AQI</span>
+                    <button
+                      onClick={() => onViewEvidence && onViewEvidence(d)}
+                      style={{
+                        padding: '4px 10px',
+                        background: '#1e3a8a',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '11.5px',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      View Evidence
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b', fontSize: '13px' }}>
+              No active hotspots found matching filter.
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'targets' && (
+        <div style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '20px' }}>
+          <div style={{ fontSize: '14px', fontWeight: '750', color: '#1e293b', marginBottom: '16px' }}>AQI Target Limits & Health Mandates</div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {[
+              { range: '0 - 50', label: 'Good', color: '#22c55e', desc: 'Minimal impact. Satisfactory air quality.' },
+              { range: '51 - 100', label: 'Moderate', color: '#84cc16', desc: 'Acceptable quality; minor breathing discomfort to sensitive people.' },
+              { range: '101 - 200', label: 'Poor', color: '#eab308', desc: 'Breathing discomfort to most people on prolonged exposure.' },
+              { range: '201 - 300', label: 'Very Poor', color: '#f97316', desc: 'Respiratory illness on prolonged exposure.' },
+              { range: '301 - 400', label: 'Severe', color: '#ef4444', desc: 'Affects healthy people and seriously impacts those with existing diseases.' },
+              { range: '401 - 500+', label: 'Hazardous', color: '#a855f7', desc: 'Severe health alert. Emergency evacuation & masks mandatory.' }
+            ].map((t, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderRadius: '8px', border: '1px solid #f1f5f9', background: '#f8fafc' }}>
+                <div style={{ width: '90px', fontSize: '13px', fontWeight: '800', color: t.color }}>{t.range}</div>
+                <div style={{ width: '100px', fontSize: '12px', fontWeight: '750', color: '#1e293b' }}>{t.label}</div>
+                <div style={{ flex: 1, fontSize: '12px', color: '#475569' }}>{t.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'configuration' && (
+        <div style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '20px' }}>
+          <div style={{ fontSize: '14px', fontWeight: '750', color: '#1e293b', marginBottom: '16px' }}>Station Telemetry Configuration</div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '6px' }}>Simulation Speed Rate</label>
+              <input type="range" min="1" max="10" defaultValue="5" style={{ width: '100%' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#64748b', marginTop: '4px' }}>
+                <span>1x (Realtime)</span>
+                <span>5x (Standard)</span>
+                <span>10x (Accelerated)</span>
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '6px' }}>Primary Data Stream Fallback</label>
+              <select style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #e2e8f0', background: '#ffffff', outline: 'none' }}>
+                <option value="owm">OpenWeatherMap API (Primary)</option>
+                <option value="openmeteo">Open-Meteo Air Quality (Fallback)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'checklist' && (
+        <div style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '20px' }}>
+          <div style={{ fontSize: '14px', fontWeight: '750', color: '#1e293b', marginBottom: '16px' }}>Preventative Measures Checklist (PM)</div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {[
+              { key: 'water_sprinkling', label: 'Deploy Water Sprinklers to reduce dust dispersion.' },
+              { key: 'smog_guns', label: 'Activate Smog Cannons in high-density corridors.' },
+              { key: 'traffic_diversions', label: 'Initiate Vehicular Traffic diversion from hotspots.' },
+              { key: 'const_ban', label: 'Impose Construction work temporary ban.' },
+              { key: 'dg_sets_ban', label: 'Enforce Diesel Generator (DG) usage restriction.' }
+            ].map(item => (
+              <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderRadius: '8px', border: '1px solid #f1f5f9', background: '#f8fafc', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={checklist[item.key]}
+                  onChange={e => setChecklist(prev => ({ ...prev, [item.key]: e.target.checked }))}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: '12.5px', color: '#334155', fontWeight: '600' }}>{item.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

@@ -275,20 +275,29 @@ async def _fetch_real_aqi_openweather(lat: float, lng: float) -> Optional[Dict[s
                     item = results[0]
                     components = item.get("components", {})
                     
-                    pm25 = components.get("pm2_5", 0.0) or 0.0
-                    pm10 = components.get("pm10", 0.0) or 0.0
+                    pm25_raw = components.get("pm2_5", 0.0) or 0.0
+                    pm10_raw = components.get("pm10", 0.0) or 0.0
                     no2 = components.get("no2", 0.0) or 0.0
                     so2 = components.get("so2", 0.0) or 0.0
                     # OpenWeatherMap returns CO in µg/m³, but CPCB/Indian AQI calculation expects mg/m³
                     co = (components.get("co", 0.0) or 0.0) / 1000.0
                     o3 = components.get("o3", 0.0) or 0.0
                     
-                    aqi_in = calculate_indian_aqi(pm25, pm10, no2, so2, co, o3)
+                    # Apply dynamic calibration correction for model overestimations in India (matching Open-Meteo CAMS correction)
+                    if pm25_raw > 20.0:
+                        correction = min(1.0, max(0.2, 20.0 / pm25_raw + 0.15))
+                        pm25_cal = pm25_raw * correction
+                    else:
+                        pm25_cal = pm25_raw
+                    
+                    pm10_cal = min(pm10_raw, pm25_cal * 2.2)
+                    
+                    aqi_in = calculate_indian_aqi(pm25_cal, pm10_cal, no2, so2, co, o3)
                     
                     return {
                         "aqi": round(aqi_in, 1),
-                        "pm25": round(pm25, 1),
-                        "pm10": round(pm10, 1),
+                        "pm25": round(pm25_cal, 1),
+                        "pm10": round(pm10_cal, 1),
                         "no2": round(no2, 1),
                         "so2": round(so2, 1),
                         "co": round(co, 2),

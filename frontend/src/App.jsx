@@ -57,12 +57,12 @@ const MAP_STYLES = {
 }
 
 const AQI_COLORS = {
-  good:         '#22c55e',
-  satisfactory: '#84cc16',
-  moderate:     '#eab308',
-  poor:         '#f97316',
-  very_poor:    '#ef4444',
-  severe:       '#991b1b',
+  good:         '#22c55e', // green
+  moderate:     '#eab308', // yellow
+  poor:         '#f97316', // orange
+  very_poor:    '#ef4444', // red
+  severe:       '#a855f7', // purple
+  hazardous:    '#991b1b', // deep red
 }
 
 const SOURCE_COLORS = {
@@ -75,11 +75,11 @@ const SOURCE_COLORS = {
 
 function aqiLevel(aqi) {
   if (aqi <= 50)  return 'good'
-  if (aqi <= 100) return 'satisfactory'
-  if (aqi <= 200) return 'moderate'
-  if (aqi <= 300) return 'poor'
-  if (aqi <= 400) return 'very_poor'
-  return 'severe'
+  if (aqi <= 100) return 'moderate'
+  if (aqi <= 200) return 'poor'
+  if (aqi <= 300) return 'very_poor'
+  if (aqi <= 400) return 'severe'
+  return 'hazardous'
 }
 
 function aqiColor(aqi) {
@@ -88,7 +88,7 @@ function aqiColor(aqi) {
 
 function getAqiTextColor(aqi) {
   const level = aqiLevel(aqi);
-  if (level === 'good' || level === 'satisfactory' || level === 'moderate') {
+  if (level === 'good' || level === 'moderate') {
     return '#000000';
   }
   return '#ffffff';

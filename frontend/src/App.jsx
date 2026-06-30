@@ -57,24 +57,24 @@ const MAP_STYLES = {
 }
 
 const AQI_COLORS = {
-  good:         '#22c55e', // green
-  moderate:     '#eab308', // yellow
-  poor:         '#f97316', // orange
-  very_poor:    '#ef4444', // red
-  severe:       '#a855f7', // purple
-  hazardous:    '#991b1b', // deep red
+  good: '#22c55e', // green
+  moderate: '#eab308', // yellow
+  poor: '#f97316', // orange
+  very_poor: '#ef4444', // red
+  severe: '#a855f7', // purple
+  hazardous: '#991b1b', // deep red
 }
 
 const SOURCE_COLORS = {
-  industrial:    '#8b5cf6',
-  vehicular:     '#3b82f6',
-  construction:  '#f59e0b',
+  industrial: '#8b5cf6',
+  vehicular: '#3b82f6',
+  construction: '#f59e0b',
   waste_burning: '#ef4444',
-  background:    '#64748b',
+  background: '#64748b',
 }
 
 function aqiLevel(aqi) {
-  if (aqi <= 50)  return 'good'
+  if (aqi <= 50) return 'good'
   if (aqi <= 100) return 'moderate'
   if (aqi <= 200) return 'poor'
   if (aqi <= 300) return 'very_poor'
@@ -107,19 +107,19 @@ function createAqiIcon(aqi, isWard = false) {
 }
 
 const ICONS = {
-  command:     <LayoutDashboard size={18} />,
-  forecast:    <TrendingUp size={18} />,
+  command: <LayoutDashboard size={18} />,
+  forecast: <TrendingUp size={18} />,
   attribution: <Search size={18} />,
   enforcement: <Shield size={18} />,
-  analytics:   <BarChart2 size={18} />,
+  analytics: <BarChart2 size={18} />,
 };
 
 const TABS = [
-  { id: 'command',     icon: ICONS.command,     label: 'Command Center' },
-  { id: 'forecast',    icon: ICONS.forecast,    label: 'Forecasts' },
+  { id: 'command', icon: ICONS.command, label: 'Command Center' },
+  { id: 'forecast', icon: ICONS.forecast, label: 'Forecasts' },
   { id: 'attribution', icon: ICONS.attribution, label: 'Source Analysis' },
   { id: 'enforcement', icon: ICONS.enforcement, label: 'Enforcement' },
-  { id: 'analytics',   icon: ICONS.analytics,   label: 'Analytics' },
+  { id: 'analytics', icon: ICONS.analytics, label: 'Analytics' },
 ]
 
 const LANGUAGES = [
@@ -334,7 +334,7 @@ export default function App() {
       ...ward,
       weather: { temperature_c: null, wind_speed_kmh: null, loading: true }
     })
-    
+
     const data = await fetchJSON(`/api/aqi-details?lat=${ward.center[0]}&lng=${ward.center[1]}&name=${encodeURIComponent(ward.name)}&country=${encodeURIComponent(ward.country || '')}&state=${encodeURIComponent(ward.state || '')}`)
     if (data) {
       // Preserve the original ward id (e.g. "hyderabad_lb_nagar") so forecast
@@ -359,8 +359,8 @@ export default function App() {
             {/* Background Layer (dark gray/unfilled) */}
             <div className="aqify-text-bg">AQIfy</div>
             {/* Foreground Layer (wavy liquid fill) */}
-            <div 
-              className="aqify-text-fg" 
+            <div
+              className="aqify-text-fg"
               style={{ backgroundPositionY: `${120 - progress * 1.6}px` }}
             >
               AQIfy
@@ -389,13 +389,15 @@ export default function App() {
         alertCount={alertCount}
         weather={state?.weather}
         onSelectPlace={handleSelectPlace}
+        wards={state?.wards || []}
+        onSelectWard={handleSelectWard}
       />
 
       <div className="main-content">
         {tab === 'command' && (
           <div className="title-section">
             <h1 className="main-title">Live Air Quality Map</h1>
-            <p className="subtitle">Real-time air quality data from over 800,000 monitoring sensors worldwide.</p>
+            <p className="subtitle">real-time air quality metrics and AI-driven source analysis.</p>
           </div>
         )}
 
@@ -435,7 +437,7 @@ export default function App() {
             onClickLocation={loadAttribution}
             mapStyle={mapStyle}
             setMapStyle={setMapStyle}
-            onCitySelect={() => {}}
+            onCitySelect={() => { }}
           />
         )}
         {tab === 'enforcement' && (
@@ -495,7 +497,7 @@ export default function App() {
 
 /* ── Header Search ───────────────────────────────────────────────────────── */
 
-function HeaderSearch({ onSelectPlace }) {
+function HeaderSearch({ onSelectPlace, wards = [], onSelectWard }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
   const [showDropdown, setShowDropdown] = useState(false)
@@ -511,36 +513,32 @@ function HeaderSearch({ onSelectPlace }) {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  const handleSearch = async (val) => {
+  const handleSearch = (val) => {
     setQuery(val)
-    if (val.trim().length < 2) {
+    if (val.trim().length < 1) {
       setResults([])
       return
     }
-    try {
-      const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(val)}&count=6&language=en&format=json&countrycode=in`)
-      if (res.ok) {
-        const data = await res.json()
-        if (data.results) {
-          setResults(data.results)
-          setShowDropdown(true)
-        } else {
-          setResults([])
-        }
-      }
-    } catch (e) {
-      console.error(e)
-    }
+    const filtered = (wards || []).filter(w =>
+      w.name.toLowerCase().includes(val.toLowerCase()) ||
+      (w.state && w.state.toLowerCase().includes(val.toLowerCase()))
+    )
+    setResults(filtered.slice(0, 6))
+    setShowDropdown(true)
   }
 
   const selectItem = (item) => {
-    onSelectPlace({
-      name: item.name,
-      state: item.admin1 || '',
-      country: item.country || '',
-      lat: item.latitude,
-      lng: item.longitude
-    })
+    if (onSelectWard) {
+      onSelectWard(item)
+    } else {
+      onSelectPlace({
+        name: item.name,
+        state: item.state || '',
+        country: item.country || '',
+        lat: item.center ? item.center[0] : item.lat,
+        lng: item.center ? item.center[1] : item.lng
+      })
+    }
     setQuery('')
     setResults([])
     setShowDropdown(false)
@@ -608,7 +606,7 @@ function HeaderSearch({ onSelectPlace }) {
               <MapPin size={12} color="#64748b" />
               <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                 <strong>{r.name}</strong>
-                {r.admin1 && `, ${r.admin1}`}
+                {(r.state || r.admin1) && `, ${r.state || r.admin1}`}
                 {r.country && ` (${r.country})`}
               </span>
             </div>
@@ -621,30 +619,30 @@ function HeaderSearch({ onSelectPlace }) {
 
 /* ── Header ────────────────────────────────────────────────────────────── */
 
-function Header({ tab, setTab, cityAqi, alertCount, weather, onSelectPlace }) {
+function Header({ tab, setTab, cityAqi, alertCount, weather, onSelectPlace, wards, onSelectWard }) {
   return (
     <header className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 24px', background: '#ffffff', borderBottom: '1px solid var(--border)' }}>
       {/* Brand Logo and Title */}
-      <div 
-        className="brand-section" 
-        onClick={() => setTab('command')} 
+      <div
+        className="brand-section"
+        onClick={() => setTab('command')}
         style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '800', fontSize: '20px', color: '#0f172a' }}
       >
         <svg width="32" height="32" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
           {/* Outer gradient ring with correct coordinate mapping and all NAQI colors */}
           <defs>
             <linearGradient id="ringGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#10b981"/>
-              <stop offset="20%" stopColor="#eab308"/>
-              <stop offset="40%" stopColor="#f97316"/>
-              <stop offset="60%" stopColor="#ef4444"/>
-              <stop offset="80%" stopColor="#a855f7"/>
-              <stop offset="100%" stopColor="#991b1b"/>
+              <stop offset="0%" stopColor="#10b981" />
+              <stop offset="20%" stopColor="#eab308" />
+              <stop offset="40%" stopColor="#f97316" />
+              <stop offset="60%" stopColor="#ef4444" />
+              <stop offset="80%" stopColor="#a855f7" />
+              <stop offset="100%" stopColor="#991b1b" />
             </linearGradient>
           </defs>
-          <circle cx="32" cy="32" r="28" stroke="url(#ringGrad)" strokeWidth="6" fill="none"/>
+          <circle cx="32" cy="32" r="28" stroke="url(#ringGrad)" strokeWidth="6" fill="none" />
           {/* Cloud icon */}
-          <path d="M44 36H22a6 6 0 0 1-.84-11.94A8 8 0 0 1 36.29 22 7 7 0 0 1 44 29a5 5 0 0 1 0 7Z" fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M44 36H22a6 6 0 0 1-.84-11.94A8 8 0 0 1 36.29 22 7 7 0 0 1 44 29a5 5 0 0 1 0 7Z" fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
         <span style={{ letterSpacing: '-0.5px' }}>AQIfy</span>
       </div>
@@ -652,7 +650,7 @@ function Header({ tab, setTab, cityAqi, alertCount, weather, onSelectPlace }) {
       {/* Header Right containing Search Bar and Navigation Group */}
       <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
         {/* Search Input Box */}
-        <HeaderSearch onSelectPlace={onSelectPlace} />
+        <HeaderSearch onSelectPlace={onSelectPlace} wards={wards} onSelectWard={onSelectWard} />
 
         {/* Segmented Navigation Control */}
         <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
@@ -827,9 +825,9 @@ function AqiGauge({ aqi }) {
     { color: '#2ea74f', startAngle: 180, endAngle: 150 }, // Green
     { color: '#f7bc06', startAngle: 150, endAngle: 120 }, // Yellow
     { color: '#f57e0f', startAngle: 120, endAngle: 90 },  // Orange
-    { color: '#e52229', startAngle: 90,  endAngle: 60 },  // Red
-    { color: '#743ca1', startAngle: 60,  endAngle: 30 },  // Purple
-    { color: '#6e1e2d', startAngle: 30,  endAngle: 0 },   // Maroon
+    { color: '#e52229', startAngle: 90, endAngle: 60 },  // Red
+    { color: '#743ca1', startAngle: 60, endAngle: 30 },  // Purple
+    { color: '#6e1e2d', startAngle: 30, endAngle: 0 },   // Maroon
   ];
 
   const buildArc = (startAngle, endAngle) => {
@@ -839,36 +837,36 @@ function AqiGauge({ aqi }) {
   };
 
   const tickLines = [
-    { val: 0,   angle: 180, len: 10 },
-    { val: 50,  angle: 150, len: 8 },
+    { val: 0, angle: 180, len: 10 },
+    { val: 50, angle: 150, len: 8 },
     { val: 100, angle: 120, len: 8 },
-    { val: 200, angle: 90,  len: 8 },
-    { val: 300, angle: 60,  len: 8 },
-    { val: 400, angle: 30,  len: 8 },
-    { val: 500, angle: 0,   len: 10 },
+    { val: 200, angle: 90, len: 8 },
+    { val: 300, angle: 60, len: 8 },
+    { val: 400, angle: 30, len: 8 },
+    { val: 500, angle: 0, len: 10 },
   ];
 
   const labels = [
-    { val: 0,   angle: 180, dx: -14, dy: 4,   color: '#2ea74f' },
-    { val: 50,  angle: 150, dx: -14, dy: -10, color: '#f7bc06' },
+    { val: 0, angle: 180, dx: -14, dy: 4, color: '#2ea74f' },
+    { val: 50, angle: 150, dx: -14, dy: -10, color: '#f7bc06' },
     { val: 100, angle: 120, dx: -14, dy: -12, color: '#f57e0f' },
-    { val: 200, angle: 90,  dx: 0,   dy: -14, color: '#e52229' },
-    { val: 300, angle: 60,  dx: 14,  dy: -12, color: '#743ca1' },
-    { val: 400, angle: 30,  dx: 14,  dy: -10, color: '#6e1e2d' },
-    { val: 500, angle: 0,   dx: 16,  dy: 4,   color: '#6e1e2d' },
+    { val: 200, angle: 90, dx: 0, dy: -14, color: '#e52229' },
+    { val: 300, angle: 60, dx: 14, dy: -12, color: '#743ca1' },
+    { val: 400, angle: 30, dx: 14, dy: -10, color: '#6e1e2d' },
+    { val: 500, angle: 0, dx: 16, dy: 4, color: '#6e1e2d' },
   ];
 
   const aqiLabel = clampedAqi <= 50 ? 'Good'
     : clampedAqi <= 100 ? 'Satisfactory'
-    : clampedAqi <= 200 ? 'Moderate'
-    : clampedAqi <= 300 ? 'Poor'
-    : clampedAqi <= 400 ? 'Very Poor' : 'Severe';
+      : clampedAqi <= 200 ? 'Moderate'
+        : clampedAqi <= 300 ? 'Poor'
+          : clampedAqi <= 400 ? 'Very Poor' : 'Severe';
 
   const aqiLabelColor = clampedAqi <= 50 ? '#2ea74f'
     : clampedAqi <= 100 ? '#f7bc06'
-    : clampedAqi <= 200 ? '#f57e0f'
-    : clampedAqi <= 300 ? '#e52229'
-    : clampedAqi <= 400 ? '#743ca1' : '#6e1e2d';
+      : clampedAqi <= 200 ? '#f57e0f'
+        : clampedAqi <= 300 ? '#e52229'
+          : clampedAqi <= 400 ? '#743ca1' : '#6e1e2d';
 
   // Tapered needle geometry
   const needleAngle = toAngle(clampedAqi);
@@ -949,12 +947,12 @@ function AqiGauge({ aqi }) {
 /* ── Custom Animated Wind Stream Layer ───────────────────────────────────── */
 
 const WIND_GRID_CITIES = [
-  { name: 'Delhi',     lat: 28.61, lng: 77.20 },
-  { name: 'Mumbai',    lat: 19.07, lng: 72.87 },
+  { name: 'Delhi', lat: 28.61, lng: 77.20 },
+  { name: 'Mumbai', lat: 19.07, lng: 72.87 },
   { name: 'Bengaluru', lat: 12.97, lng: 77.59 },
-  { name: 'Chennai',   lat: 13.08, lng: 80.27 },
+  { name: 'Chennai', lat: 13.08, lng: 80.27 },
   { name: 'Hyderabad', lat: 17.38, lng: 78.48 },
-  { name: 'Kolkata',   lat: 22.57, lng: 88.36 }
+  { name: 'Kolkata', lat: 22.57, lng: 88.36 }
 ];
 
 function WindStreamAnimation() {
@@ -975,11 +973,11 @@ function WindStreamAnimation() {
             const parsed = data.map((item, idx) => {
               const dir = item.hourly?.winddirection_10m?.[0] ?? 245;
               const speed = item.hourly?.windspeed_10m?.[0] ?? 12.3;
-              
+
               // Meteorological direction (FROM) -> vector trajectory angle (TO) in radians
               const angleRad = ((dir + 180) % 360) * Math.PI / 180;
               const scaledSpeed = Math.min(3.5, Math.max(0.8, speed / 8));
-              
+
               return {
                 lat: WIND_GRID_CITIES[idx].lat,
                 lng: WIND_GRID_CITIES[idx].lng,
@@ -1076,11 +1074,11 @@ function WindStreamAnimation() {
 
         ctx.beginPath();
         ctx.strokeStyle = `rgba(248, 250, 252, ${p.opacity})`;
-        
+
         // Draw path line following local vector
         const targetX = p.x + Math.cos(angle) * p.length;
         const targetY = p.y + Math.sin(angle) * p.length;
-        
+
         ctx.moveTo(p.x, p.y);
         ctx.lineTo(targetX, targetY);
         ctx.stroke();
@@ -1137,15 +1135,15 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
   const [showConstruction, setShowConstruction] = useState(true)
 
   const SOURCE_COLORS = {
-    industrial:    '#ef4444',
-    vehicular:     '#3b82f6',
-    construction:  '#f59e0b',
+    industrial: '#ef4444',
+    vehicular: '#3b82f6',
+    construction: '#f59e0b',
     waste_burning: '#10b981',
   }
   const SOURCE_ICONS = {
-    industrial:    <Factory size={13} color="#ef4444" style={{ marginRight: '4px', verticalAlign: 'middle' }} />,
-    vehicular:     <Car size={13} color="#3b82f6" style={{ marginRight: '4px', verticalAlign: 'middle' }} />,
-    construction:  <Hammer size={13} color="#f59e0b" style={{ marginRight: '4px', verticalAlign: 'middle' }} />,
+    industrial: <Factory size={13} color="#ef4444" style={{ marginRight: '4px', verticalAlign: 'middle' }} />,
+    vehicular: <Car size={13} color="#3b82f6" style={{ marginRight: '4px', verticalAlign: 'middle' }} />,
+    construction: <Hammer size={13} color="#f59e0b" style={{ marginRight: '4px', verticalAlign: 'middle' }} />,
     waste_burning: <Flame size={13} color="#10b981" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
   }
 
@@ -1312,494 +1310,494 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
   return (
     <div className="content-area" style={{ display: 'flex', flexDirection: 'row', gap: '24px', flex: 1 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: 1, minWidth: 0 }}>
-      <div className="iqair-layout-grid" style={{ minHeight: '520px' }}>
-        {/* Left Column (Maximized Map) */}
-        <div className="iqair-right-panel" style={{ flex: 1 }}>
-          <MapContainer
-            center={state.city.center}
-            zoom={5}
-            minZoom={4}
-            maxBounds={[[6.0, 65.0], [38.0, 99.0]]}
-            maxBoundsViscosity={1.0}
-            scrollWheelZoom={true}
-            zoomControl={false}
-          >
-            <ChangeMapView center={targetCenter} zoom={targetZoom} />
-            
-            {/* Dark Matter Basemap */}
-            <TileLayer
-              attribution="&copy; CARTO"
-              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-              noWrap={true}
-              updateWhenIdle={true}
-              keepBuffer={6}
-            />
+        <div className="iqair-layout-grid" style={{ minHeight: '520px' }}>
+          {/* Left Column (Maximized Map) */}
+          <div className="iqair-right-panel" style={{ flex: 1 }}>
+            <MapContainer
+              center={state.city.center}
+              zoom={5}
+              minZoom={4}
+              maxBounds={[[6.0, 65.0], [38.0, 99.0]]}
+              maxBoundsViscosity={1.0}
+              scrollWheelZoom={true}
+              zoomControl={false}
+            >
+              <ChangeMapView center={targetCenter} zoom={targetZoom} />
 
-            {/* Preset City Markers (Toggled by Stations) */}
-            {showStations && state.sensors.map(s => {
-              const ward = state.wards.find(w => w.id === s.ward_id)
-              const placeLabel = ward ? ward.name : s.sensor_id
-              const aqiVal = s.aqi_in ?? s.aqi;
-              const isWard = s.ward_id && s.ward_id.includes('_') && (
-                s.ward_id.startsWith('delhi_') || s.ward_id.startsWith('mumbai_') ||
-                s.ward_id.startsWith('bengaluru_') || s.ward_id.startsWith('chennai_') ||
-                s.ward_id.startsWith('hyderabad_') || s.ward_id.startsWith('kolkata_')
-              );
-              return (
-                <Marker
-                  key={s.sensor_id}
-                  position={s.location}
-                  icon={createAqiIcon(aqiVal, isWard)}
-                  eventHandlers={{
-                    click: () => {
-                      if (ward) onSelectWard(ward);
-                    }
-                  }}
-                >
-                  <Popup>
-                    <div>
-                      <strong>{placeLabel}</strong><br />
-                      AQI: <strong style={{ color: aqiColor(aqiVal) }}>{aqiVal}</strong>
-                    </div>
-                  </Popup>
-                </Marker>
-              )
-            })}
-
-            {/* Custom Searched Places */}
-            {showStations && customPlaces && customPlaces.map(cp => {
-              const aqiVal = cp.aqi_in ?? cp.current_aqi;
-              return (
-                <Marker
-                  key={cp.id}
-                  position={cp.center}
-                  icon={createAqiIcon(aqiVal)}
-                  eventHandlers={{
-                    click: () => {
-                      onSelectWard(cp);
-                    }
-                  }}
-                >
-                  <Popup>
-                    <div>
-                      <strong>{cp.name}</strong><br />
-                      AQI: <strong style={{ color: aqiColor(aqiVal) }}>{aqiVal}</strong>
-                    </div>
-                  </Popup>
-                </Marker>
-              )
-            })}
-
-            {/* NASA Active Fires Layer (Toggled by Fires Overlay) */}
-            {showFires && (
-              <WMSTileLayer
-                url="https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi"
-                layers="VIIRS_SNPP_Thermal_Anomalies_375m_All"
-                format="image/png"
-                transparent={true}
-                attribution="NASA GIBS / FIRMS"
+              {/* Dark Matter Basemap */}
+              <TileLayer
+                attribution="&copy; CARTO"
+                url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
                 noWrap={true}
+                updateWhenIdle={true}
+                keepBuffer={6}
               />
-            )}
+
+              {/* Preset City Markers (Toggled by Stations) */}
+              {showStations && state.sensors.map(s => {
+                const ward = state.wards.find(w => w.id === s.ward_id)
+                const placeLabel = ward ? ward.name : s.sensor_id
+                const aqiVal = s.aqi_in ?? s.aqi;
+                const isWard = s.ward_id && s.ward_id.includes('_') && (
+                  s.ward_id.startsWith('delhi_') || s.ward_id.startsWith('mumbai_') ||
+                  s.ward_id.startsWith('bengaluru_') || s.ward_id.startsWith('chennai_') ||
+                  s.ward_id.startsWith('hyderabad_') || s.ward_id.startsWith('kolkata_')
+                );
+                return (
+                  <Marker
+                    key={s.sensor_id}
+                    position={s.location}
+                    icon={createAqiIcon(aqiVal, isWard)}
+                    eventHandlers={{
+                      click: () => {
+                        if (ward) onSelectWard(ward);
+                      }
+                    }}
+                  >
+                    <Popup>
+                      <div>
+                        <strong>{placeLabel}</strong><br />
+                        AQI: <strong style={{ color: aqiColor(aqiVal) }}>{aqiVal}</strong>
+                      </div>
+                    </Popup>
+                  </Marker>
+                )
+              })}
+
+              {/* Custom Searched Places */}
+              {showStations && customPlaces && customPlaces.map(cp => {
+                const aqiVal = cp.aqi_in ?? cp.current_aqi;
+                return (
+                  <Marker
+                    key={cp.id}
+                    position={cp.center}
+                    icon={createAqiIcon(aqiVal)}
+                    eventHandlers={{
+                      click: () => {
+                        onSelectWard(cp);
+                      }
+                    }}
+                  >
+                    <Popup>
+                      <div>
+                        <strong>{cp.name}</strong><br />
+                        AQI: <strong style={{ color: aqiColor(aqiVal) }}>{aqiVal}</strong>
+                      </div>
+                    </Popup>
+                  </Marker>
+                )
+              })}
+
+              {/* NASA Active Fires Layer (Toggled by Fires Overlay) */}
+              {showFires && (
+                <WMSTileLayer
+                  url="https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi"
+                  layers="VIIRS_SNPP_Thermal_Anomalies_375m_All"
+                  format="image/png"
+                  transparent={true}
+                  attribution="NASA GIBS / FIRMS"
+                  noWrap={true}
+                />
+              )}
 
 
 
-            {/* Registered Emission Sources (Toggled by Factories, Vehicular, Construction) */}
-            {state.sources && state.sources.map(src => {
-              const visible = 
-                (src.category === 'industrial' && showFactories) ||
-                (src.category === 'vehicular' && showVehicular) ||
-                (src.category === 'construction' && showConstruction);
-              
-              if (!visible) return null;
+              {/* Registered Emission Sources (Toggled by Factories, Vehicular, Construction) */}
+              {state.sources && state.sources.map(src => {
+                const visible =
+                  (src.category === 'industrial' && showFactories) ||
+                  (src.category === 'vehicular' && showVehicular) ||
+                  (src.category === 'construction' && showConstruction);
 
-              return (
-                <CircleMarker
-                  key={`source-cc-${src.id}`}
-                  center={src.location}
-                  radius={8}
-                  pathOptions={{
-                    fillColor: SOURCE_COLORS[src.category] || '#64748b',
-                    fillOpacity: 0.8,
-                    color: '#ffffff',
-                    weight: 1.5
-                  }}
-                >
-                  <Popup>
-                    <div style={{ color: '#0f172a', fontSize: '12px' }}>
-                      <strong style={{ fontSize: '13px', display: 'inline-flex', alignItems: 'center' }}>{SOURCE_ICONS[src.category] || <MapPin size={13} color="#64748b" style={{ marginRight: '4px' }} />} {src.name}</strong><br />
-                      Category: <span style={{ textTransform: 'capitalize', fontWeight: '600' }}>{src.label || src.category}</span><br />
-                      Emission Rate: <strong>{src.Q ?? src.emission_rate_Q ?? 0} g/s</strong>
+                if (!visible) return null;
+
+                return (
+                  <CircleMarker
+                    key={`source-cc-${src.id}`}
+                    center={src.location}
+                    radius={8}
+                    pathOptions={{
+                      fillColor: SOURCE_COLORS[src.category] || '#64748b',
+                      fillOpacity: 0.8,
+                      color: '#ffffff',
+                      weight: 1.5
+                    }}
+                  >
+                    <Popup>
+                      <div style={{ color: '#0f172a', fontSize: '12px' }}>
+                        <strong style={{ fontSize: '13px', display: 'inline-flex', alignItems: 'center' }}>{SOURCE_ICONS[src.category] || <MapPin size={13} color="#64748b" style={{ marginRight: '4px' }} />} {src.name}</strong><br />
+                        Category: <span style={{ textTransform: 'capitalize', fontWeight: '600' }}>{src.label || src.category}</span><br />
+                        Emission Rate: <strong>{src.Q ?? src.emission_rate_Q ?? 0} g/s</strong>
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+                );
+              })}
+
+              <ZoomControl position="bottomright" />
+            </MapContainer>
+
+            {/* Floating Controls Overlay (Right Panel on Map) styled as individual white pills with blue icons */}
+            <div className="map-right-controls" style={{
+              position: 'absolute',
+              top: '20px',
+              right: '20px',
+              zIndex: 1000,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              background: 'transparent',
+              border: 'none',
+              boxShadow: 'none',
+              padding: 0,
+              width: 'auto'
+            }}>
+              <span style={{ fontSize: '10px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px', paddingLeft: '4px' }}>Outdoor</span>
+
+              {/* Air Quality Stations Pill */}
+              <button
+                onClick={() => setShowStations(!showStations)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '6px 14px 6px 6px',
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '24px',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                  fontWeight: '600',
+                  fontSize: '12px',
+                  color: '#1e293b',
+                  width: '185px',
+                  justifyContent: 'space-between',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    background: showStations ? '#3b82f6' : '#f1f5f9',
+                    color: showStations ? '#ffffff' : '#64748b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '13px'
+                  }}>
+                    <Radio size={14} />
+                  </div>
+                  <span>Air quality stations</span>
+                </div>
+                {showStations && <span style={{ color: '#3b82f6', fontWeight: '700', fontSize: '13px' }}>✓</span>}
+              </button>
+
+              {/* Fires Pill */}
+              <button
+                onClick={() => setShowFires(!showFires)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '6px 14px 6px 6px',
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '24px',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                  fontWeight: '600',
+                  fontSize: '12px',
+                  color: '#1e293b',
+                  width: '185px',
+                  justifyContent: 'space-between',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    background: showFires ? '#3b82f6' : '#f1f5f9',
+                    color: showFires ? '#ffffff' : '#64748b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '13px'
+                  }}>
+                    <Flame size={14} />
+                  </div>
+                  <span>Fires</span>
+                </div>
+                {showFires && <span style={{ color: '#3b82f6', fontWeight: '700', fontSize: '13px' }}>✓</span>}
+              </button>
+
+
+
+              <span style={{ fontSize: '10px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '6px', marginBottom: '2px', paddingLeft: '4px' }}>Emission Sources</span>
+
+              {/* Factories Pill */}
+              <button
+                onClick={() => setShowFactories(!showFactories)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '6px 14px 6px 6px',
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '24px',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                  fontWeight: '600',
+                  fontSize: '12px',
+                  color: '#1e293b',
+                  width: '185px',
+                  justifyContent: 'space-between',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    background: showFactories ? '#3b82f6' : '#f1f5f9',
+                    color: showFactories ? '#ffffff' : '#64748b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '13px'
+                  }}>
+                    <Factory size={14} />
+                  </div>
+                  <span>Factories</span>
+                </div>
+                {showFactories && <span style={{ color: '#3b82f6', fontWeight: '700', fontSize: '13px' }}>✓</span>}
+              </button>
+
+              {/* Vehicular Traffic Pill */}
+              <button
+                onClick={() => setShowVehicular(!showVehicular)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '6px 14px 6px 6px',
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '24px',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                  fontWeight: '600',
+                  fontSize: '12px',
+                  color: '#1e293b',
+                  width: '185px',
+                  justifyContent: 'space-between',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    background: showVehicular ? '#3b82f6' : '#f1f5f9',
+                    color: showVehicular ? '#ffffff' : '#64748b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '13px'
+                  }}>
+                    <Car size={14} />
+                  </div>
+                  <span>Vehicular Traffic</span>
+                </div>
+                {showVehicular && <span style={{ color: '#3b82f6', fontWeight: '700', fontSize: '13px' }}>✓</span>}
+              </button>
+
+              {/* Construction Sites Pill */}
+              <button
+                onClick={() => setShowConstruction(!showConstruction)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '6px 14px 6px 6px',
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '24px',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                  fontWeight: '600',
+                  fontSize: '12px',
+                  color: '#1e293b',
+                  width: '185px',
+                  justifyContent: 'space-between',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    background: showConstruction ? '#3b82f6' : '#f1f5f9',
+                    color: showConstruction ? '#ffffff' : '#64748b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '13px'
+                  }}>
+                    <Hammer size={14} />
+                  </div>
+                  <span>Construction Sites</span>
+                </div>
+                {showConstruction && <span style={{ color: '#3b82f6', fontWeight: '700', fontSize: '13px' }}>✓</span>}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Detailed City View (Hourly, Pollutants & Recommendations) ── */}
+        {selectedWard && (
+          <div className="detailed-city-view">
+            <div>
+              <h3 className="detailed-hourly-title">Hourly weather & air quality forecast for {selectedCityName}</h3>
+              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', marginBottom: '12px' }}>
+                Projections for the next 72 hours based on localized atmospheric modeling.
+              </div>
+              <div className="detailed-hourly-scroll" style={{ width: '100%', maxWidth: '100%', overflowX: 'auto' }}>
+                {hourlyForecastData.map((item, idx) => (
+                  <div key={idx} className="hourly-card">
+                    <span className="hourly-time">{item.time}</span>
+                    <span className="hourly-aqi" style={{ backgroundColor: aqiColor(item.aqi) }}>
+                      {item.aqi}
+                    </span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: '16px' }}>
+                      {item.condition === 'rainy' ? <CloudRain size={14} color="#3b82f6" /> :
+                        item.condition === 'clear-night' ? <Moon size={14} color="#a5f3fc" /> :
+                          item.condition === 'night-cloudy' ? <CloudMoon size={14} color="#94a3b8" /> :
+                            item.condition === 'cloudy' ? <Cloud size={14} color="#94a3b8" /> :
+                              <Sun size={14} color="#eab308" />}
+                    </span>
+                    <span className="hourly-temp">{item.temp}°</span>
+                    <span className="hourly-wind"><Wind size={11} color="#64748b" style={{ marginRight: '3px', verticalAlign: 'middle' }} />{item.wind} km/h</span>
+                    <span className="hourly-humidity"><Activity size={11} color="#3b82f6" style={{ marginRight: '3px', verticalAlign: 'middle' }} />{item.humidity}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="detailed-bottom-layout" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+              {/* Pollutants Breakdown Card */}
+              <div className="pollutants-card-detailed" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <h4 style={{ fontSize: '15px', fontWeight: '750', margin: '0 0 4px 0', color: '#0f172a' }}>Air pollutants breakdown</h4>
+
+                {/* PM2.5 */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                    <div>
+                      <strong style={{ fontSize: '13px', color: '#334155' }}>PM2.5</strong>
+                      <div style={{ fontSize: '10px', color: '#64748b' }}>WHO Annual Guideline: 5 µg/m³</div>
                     </div>
-                  </Popup>
-                </CircleMarker>
-              );
-            })}
-
-            <ZoomControl position="bottomright" />
-          </MapContainer>
-
-          {/* Floating Controls Overlay (Right Panel on Map) styled as individual white pills with blue icons */}
-          <div className="map-right-controls" style={{
-            position: 'absolute',
-            top: '20px',
-            right: '20px',
-            zIndex: 1000,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-            background: 'transparent',
-            border: 'none',
-            boxShadow: 'none',
-            padding: 0,
-            width: 'auto'
-          }}>
-            <span style={{ fontSize: '10px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px', paddingLeft: '4px' }}>Outdoor</span>
-            
-            {/* Air Quality Stations Pill */}
-            <button 
-              onClick={() => setShowStations(!showStations)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '6px 14px 6px 6px',
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: '24px',
-                cursor: 'pointer',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
-                fontWeight: '600',
-                fontSize: '12px',
-                color: '#1e293b',
-                width: '185px',
-                justifyContent: 'space-between',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '50%',
-                  background: showStations ? '#3b82f6' : '#f1f5f9',
-                  color: showStations ? '#ffffff' : '#64748b',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '13px'
-                }}>
-                  <Radio size={14} />
-                </div>
-                <span>Air quality stations</span>
-              </div>
-              {showStations && <span style={{ color: '#3b82f6', fontWeight: '700', fontSize: '13px' }}>✓</span>}
-            </button>
-
-            {/* Fires Pill */}
-            <button 
-              onClick={() => setShowFires(!showFires)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '6px 14px 6px 6px',
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: '24px',
-                cursor: 'pointer',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
-                fontWeight: '600',
-                fontSize: '12px',
-                color: '#1e293b',
-                width: '185px',
-                justifyContent: 'space-between',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '50%',
-                  background: showFires ? '#3b82f6' : '#f1f5f9',
-                  color: showFires ? '#ffffff' : '#64748b',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '13px'
-                }}>
-                  <Flame size={14} />
-                </div>
-                <span>Fires</span>
-              </div>
-              {showFires && <span style={{ color: '#3b82f6', fontWeight: '700', fontSize: '13px' }}>✓</span>}
-            </button>
-
-
-
-            <span style={{ fontSize: '10px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '6px', marginBottom: '2px', paddingLeft: '4px' }}>Emission Sources</span>
-
-            {/* Factories Pill */}
-            <button 
-              onClick={() => setShowFactories(!showFactories)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '6px 14px 6px 6px',
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: '24px',
-                cursor: 'pointer',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
-                fontWeight: '600',
-                fontSize: '12px',
-                color: '#1e293b',
-                width: '185px',
-                justifyContent: 'space-between',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '50%',
-                  background: showFactories ? '#3b82f6' : '#f1f5f9',
-                  color: showFactories ? '#ffffff' : '#64748b',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '13px'
-                }}>
-                  <Factory size={14} />
-                </div>
-                <span>Factories</span>
-              </div>
-              {showFactories && <span style={{ color: '#3b82f6', fontWeight: '700', fontSize: '13px' }}>✓</span>}
-            </button>
-
-            {/* Vehicular Traffic Pill */}
-            <button 
-              onClick={() => setShowVehicular(!showVehicular)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '6px 14px 6px 6px',
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: '24px',
-                cursor: 'pointer',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
-                fontWeight: '600',
-                fontSize: '12px',
-                color: '#1e293b',
-                width: '185px',
-                justifyContent: 'space-between',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '50%',
-                  background: showVehicular ? '#3b82f6' : '#f1f5f9',
-                  color: showVehicular ? '#ffffff' : '#64748b',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '13px'
-                }}>
-                  <Car size={14} />
-                </div>
-                <span>Vehicular Traffic</span>
-              </div>
-              {showVehicular && <span style={{ color: '#3b82f6', fontWeight: '700', fontSize: '13px' }}>✓</span>}
-            </button>
-
-            {/* Construction Sites Pill */}
-            <button 
-              onClick={() => setShowConstruction(!showConstruction)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '6px 14px 6px 6px',
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: '24px',
-                cursor: 'pointer',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
-                fontWeight: '600',
-                fontSize: '12px',
-                color: '#1e293b',
-                width: '185px',
-                justifyContent: 'space-between',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '50%',
-                  background: showConstruction ? '#3b82f6' : '#f1f5f9',
-                  color: showConstruction ? '#ffffff' : '#64748b',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '13px'
-                }}>
-                  <Hammer size={14} />
-                </div>
-                <span>Construction Sites</span>
-              </div>
-              {showConstruction && <span style={{ color: '#3b82f6', fontWeight: '700', fontSize: '13px' }}>✓</span>}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Detailed City View (Hourly, Pollutants & Recommendations) ── */}
-      {selectedWard && (
-        <div className="detailed-city-view">
-          <div>
-            <h3 className="detailed-hourly-title">Hourly weather & air quality forecast for {selectedCityName}</h3>
-            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', marginBottom: '12px' }}>
-              Projections for the next 72 hours based on localized atmospheric modeling.
-            </div>
-            <div className="detailed-hourly-scroll" style={{ width: '100%', maxWidth: '100%', overflowX: 'auto' }}>
-              {hourlyForecastData.map((item, idx) => (
-                <div key={idx} className="hourly-card">
-                  <span className="hourly-time">{item.time}</span>
-                  <span className="hourly-aqi" style={{ backgroundColor: aqiColor(item.aqi) }}>
-                    {item.aqi}
-                  </span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: '16px' }}>
-                    {item.condition === 'rainy' ? <CloudRain size={14} color="#3b82f6" /> :
-                     item.condition === 'clear-night' ? <Moon size={14} color="#a5f3fc" /> :
-                     item.condition === 'night-cloudy' ? <CloudMoon size={14} color="#94a3b8" /> :
-                     item.condition === 'cloudy' ? <Cloud size={14} color="#94a3b8" /> :
-                     <Sun size={14} color="#eab308" />}
-                  </span>
-                  <span className="hourly-temp">{item.temp}°</span>
-                  <span className="hourly-wind"><Wind size={11} color="#64748b" style={{ marginRight: '3px', verticalAlign: 'middle' }} />{item.wind} km/h</span>
-                  <span className="hourly-humidity"><Activity size={11} color="#3b82f6" style={{ marginRight: '3px', verticalAlign: 'middle' }} />{item.humidity}%</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="detailed-bottom-layout" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-            {/* Pollutants Breakdown Card */}
-            <div className="pollutants-card-detailed" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <h4 style={{ fontSize: '15px', fontWeight: '750', margin: '0 0 4px 0', color: '#0f172a' }}>Air pollutants breakdown</h4>
-              
-              {/* PM2.5 */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                  <div>
-                    <strong style={{ fontSize: '13px', color: '#334155' }}>PM2.5</strong>
-                    <div style={{ fontSize: '10px', color: '#64748b' }}>WHO Annual Guideline: 5 µg/m³</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: aqiColor(pm25) }} />
+                      <strong style={{ fontSize: '15px', color: '#0f172a' }}>{pm25} µg/m³</strong>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: aqiColor(pm25) }} />
-                    <strong style={{ fontSize: '15px', color: '#0f172a' }}>{pm25} µg/m³</strong>
-                  </div>
+                  {pm25 > 5 && (
+                    <div style={{ background: '#fff1f2', border: '1px solid #ffe4e6', borderRadius: '4px', padding: '6px 10px', color: '#e11d48', fontSize: '11px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                      <span>⚠️</span>
+                      <span>PM2.5 is {Math.max(1, Math.round(pm25 / 5))}x above the WHO guideline value.</span>
+                    </div>
+                  )}
                 </div>
-                {pm25 > 5 && (
-                  <div style={{ background: '#fff1f2', border: '1px solid #ffe4e6', borderRadius: '4px', padding: '6px 10px', color: '#e11d48', fontSize: '11px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
-                    <span>⚠️</span>
-                    <span>PM2.5 is {Math.max(1, Math.round(pm25 / 5))}x above the WHO guideline value.</span>
+
+                {/* PM10 */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                    <div>
+                      <strong style={{ fontSize: '13px', color: '#334155' }}>PM10</strong>
+                      <div style={{ fontSize: '10px', color: '#64748b' }}>WHO Annual Guideline: 15 µg/m³</div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: aqiColor(pm10) }} />
+                      <strong style={{ fontSize: '15px', color: '#0f172a' }}>{pm10} µg/m³</strong>
+                    </div>
                   </div>
-                )}
+                  {pm10 > 15 && (
+                    <div style={{ background: '#fff1f2', border: '1px solid #ffe4e6', borderRadius: '4px', padding: '6px 10px', color: '#e11d48', fontSize: '11px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                      <span>⚠️</span>
+                      <span>PM10 is {Math.max(1, Math.round(pm10 / 15))}x above the WHO guideline value.</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* NO2 */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                    <div>
+                      <strong style={{ fontSize: '13px', color: '#334155' }}>NO₂</strong>
+                      <div style={{ fontSize: '10px', color: '#64748b' }}>WHO Annual Guideline: 10 µg/m³</div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: aqiColor(no2) }} />
+                      <strong style={{ fontSize: '15px', color: '#0f172a' }}>{no2} µg/m³</strong>
+                    </div>
+                  </div>
+                  {no2 > 10 && (
+                    <div style={{ background: '#fff1f2', border: '1px solid #ffe4e6', borderRadius: '4px', padding: '6px 10px', color: '#e11d48', fontSize: '11px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                      <span>⚠️</span>
+                      <span>NO₂ is {Math.max(1, Math.round(no2 / 10))}x above the WHO guideline value.</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* PM10 */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                  <div>
-                    <strong style={{ fontSize: '13px', color: '#334155' }}>PM10</strong>
-                    <div style={{ fontSize: '10px', color: '#64748b' }}>WHO Annual Guideline: 15 µg/m³</div>
+              {/* Health Recommendations Card */}
+              <div className="health-recs-card" style={{ display: 'flex', flexDirection: 'column' }}>
+                <h4 style={{ fontSize: '15px', fontWeight: '750', color: '#0f172a', margin: '0 0 12px 0' }}>Health recommendations</h4>
+                <div className="health-rec-list" style={{ marginTop: '0' }}>
+                  <div className="health-rec-item" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', textAlign: 'center' }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+                    </svg>
+                    <span style={{ fontSize: '11px', fontWeight: '600', color: '#1e293b' }}>Avoid outdoor exercise</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: aqiColor(pm10) }} />
-                    <strong style={{ fontSize: '15px', color: '#0f172a' }}>{pm10} µg/m³</strong>
+                  <div className="health-rec-item" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', textAlign: 'center' }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="18" height="18" rx="2" />
+                      <line x1="9" y1="3" x2="9" y2="21" />
+                      <line x1="15" y1="3" x2="15" y2="21" />
+                      <line x1="3" y1="9" x2="21" y2="9" />
+                      <line x1="3" y1="15" x2="21" y2="15" />
+                    </svg>
+                    <span style={{ fontSize: '11px', fontWeight: '600', color: '#1e293b' }}>Close windows</span>
                   </div>
-                </div>
-                {pm10 > 15 && (
-                  <div style={{ background: '#fff1f2', border: '1px solid #ffe4e6', borderRadius: '4px', padding: '6px 10px', color: '#e11d48', fontSize: '11px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
-                    <span>⚠️</span>
-                    <span>PM10 is {Math.max(1, Math.round(pm10 / 15))}x above the WHO guideline value.</span>
+                  <div className="health-rec-item" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', textAlign: 'center' }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="4" y="6" width="16" height="12" rx="2" />
+                      <path d="M4 9c-2 0-3 1-3 3s1 3 3 3M20 9c2 0 3 1 3 3s-1 3-3 3" />
+                      <line x1="8" y1="12" x2="16" y2="12" />
+                    </svg>
+                    <span style={{ fontSize: '11px', fontWeight: '600', color: '#1e293b' }}>Wear a mask outdoors</span>
                   </div>
-                )}
-              </div>
-
-              {/* NO2 */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                  <div>
-                    <strong style={{ fontSize: '13px', color: '#334155' }}>NO₂</strong>
-                    <div style={{ fontSize: '10px', color: '#64748b' }}>WHO Annual Guideline: 10 µg/m³</div>
+                  <div className="health-rec-item" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', textAlign: 'center' }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M12 12a3 3 0 1 0-3-3M12 12a3 3 0 1 0 3-3M12 12a3 3 0 1 0-3 3M12 12a3 3 0 1 0 3 3" />
+                    </svg>
+                    <span style={{ fontSize: '11px', fontWeight: '600', color: '#1e293b' }}>Run an air purifier</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: aqiColor(no2) }} />
-                    <strong style={{ fontSize: '15px', color: '#0f172a' }}>{no2} µg/m³</strong>
-                  </div>
-                </div>
-                {no2 > 10 && (
-                  <div style={{ background: '#fff1f2', border: '1px solid #ffe4e6', borderRadius: '4px', padding: '6px 10px', color: '#e11d48', fontSize: '11px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
-                    <span>⚠️</span>
-                    <span>NO₂ is {Math.max(1, Math.round(no2 / 10))}x above the WHO guideline value.</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Health Recommendations Card */}
-            <div className="health-recs-card" style={{ display: 'flex', flexDirection: 'column' }}>
-              <h4 style={{ fontSize: '15px', fontWeight: '750', color: '#0f172a', margin: '0 0 12px 0' }}>Health recommendations</h4>
-              <div className="health-rec-list" style={{ marginTop: '0' }}>
-                <div className="health-rec-item" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', textAlign: 'center' }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
-                  </svg>
-                  <span style={{ fontSize: '11px', fontWeight: '600', color: '#1e293b' }}>Avoid outdoor exercise</span>
-                </div>
-                <div className="health-rec-item" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', textAlign: 'center' }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <line x1="9" y1="3" x2="9" y2="21" />
-                    <line x1="15" y1="3" x2="15" y2="21" />
-                    <line x1="3" y1="9" x2="21" y2="9" />
-                    <line x1="3" y1="15" x2="21" y2="15" />
-                  </svg>
-                  <span style={{ fontSize: '11px', fontWeight: '600', color: '#1e293b' }}>Close windows</span>
-                </div>
-                <div className="health-rec-item" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', textAlign: 'center' }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="4" y="6" width="16" height="12" rx="2" />
-                    <path d="M4 9c-2 0-3 1-3 3s1 3 3 3M20 9c2 0 3 1 3 3s-1 3-3 3" />
-                    <line x1="8" y1="12" x2="16" y2="12" />
-                  </svg>
-                  <span style={{ fontSize: '11px', fontWeight: '600', color: '#1e293b' }}>Wear a mask outdoors</span>
-                </div>
-                <div className="health-rec-item" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', textAlign: 'center' }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <path d="M12 12a3 3 0 1 0-3-3M12 12a3 3 0 1 0 3-3M12 12a3 3 0 1 0-3 3M12 12a3 3 0 1 0 3 3" />
-                  </svg>
-                  <span style={{ fontSize: '11px', fontWeight: '600', color: '#1e293b' }}>Run an air purifier</span>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
       </div>
       <div className="right-panel" style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', minHeight: '520px', width: '360px', flexShrink: 0 }}>
         {selectedWard ? (
@@ -1907,14 +1905,14 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
                 const r3 = Math.abs((hash >> 4) % 20) + 8;    // 8-28
                 const r4 = Math.abs((hash >> 6) % 12) + 5;    // 5-17
                 const r5 = 100 - (r1 + r2 + r3 + r4);
-                
+
                 return [
                   { label: 'Industrial', pct: r1, color: '#ef4444', icon: <Factory size={12} color="#ef4444" /> },
                   { label: 'Vehicular', pct: r2, color: '#3b82f6', icon: <Car size={12} color="#3b82f6" /> },
                   { label: 'Construction', pct: r3, color: '#f59e0b', icon: <Hammer size={12} color="#f59e0b" /> },
                   { label: 'Waste Burning', pct: r4, color: '#10b981', icon: <Flame size={12} color="#10b981" /> },
                   { label: 'Background', pct: Math.max(0, r5), color: '#64748b', icon: <Leaf size={12} color="#64748b" /> },
-                ].sort((a,b) => b.pct - a.pct);
+                ].sort((a, b) => b.pct - a.pct);
               };
 
               const getRealSources = (ward) => {
@@ -1952,7 +1950,7 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
                   { label: 'Construction', pct: Math.round((sums.construction / totalQ) * 100), color: '#f59e0b', icon: <Hammer size={12} color="#f59e0b" /> },
                   { label: 'Waste Burning', pct: Math.round((sums.waste_burning / totalQ) * 100), color: '#10b981', icon: <Flame size={12} color="#10b981" /> },
                   { label: 'Background', pct: Math.round((sums.background / totalQ) * 100), color: '#64748b', icon: <Leaf size={12} color="#64748b" /> },
-                ].sort((a,b) => b.pct - a.pct);
+                ].sort((a, b) => b.pct - a.pct);
               };
 
               const displaySources = (attribution && attribution.sources) ? attribution.sources.map(s => {
@@ -1962,12 +1960,12 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
                   pct: Math.round(s.percentage),
                   color: SOURCE_COLORS[category] || '#64748b',
                   icon: category === 'industrial' ? <Factory size={12} color="#ef4444" /> :
-                        category === 'vehicular' ? <Car size={12} color="#3b82f6" /> :
-                        category === 'construction' ? <Hammer size={12} color="#f59e0b" /> :
+                    category === 'vehicular' ? <Car size={12} color="#3b82f6" /> :
+                      category === 'construction' ? <Hammer size={12} color="#f59e0b" /> :
                         category === 'waste_burning' ? <Flame size={12} color="#10b981" /> :
-                        <Leaf size={12} color="#64748b" />
+                          <Leaf size={12} color="#64748b" />
                 };
-              }).sort((a,b) => b.pct - a.pct) : getRealSources(selectedWard);
+              }).sort((a, b) => b.pct - a.pct) : getRealSources(selectedWard);
 
               return (
                 <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px', marginTop: '4px' }}>
@@ -1976,8 +1974,7 @@ function CommandCenter({ state, selectedWard, onSelectWard, mapStyle, setMapStyl
                       <Search size={14} color="#ffffff" />
                     </div>
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: '750', color: '#0f172a' }}>Source Attribution Agent</div>
-                      <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '500' }}>AI-powered pollution source analysis</div>
+                      <div style={{ fontSize: '13px', fontWeight: '750', color: '#0f172a' }}>SourceIQ</div>
                     </div>
                   </div>
 
@@ -2050,11 +2047,11 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
     const baseVal = currentWard ? Math.round(currentWard.aqi_in ?? currentWard.current_aqi) : 0;
     baselineAqi = baseVal;
     mitigatedAqi = baseVal;
-    
+
     // Wind Speed
     const wsKmh = state.weather?.wind_speed_kmh || 12.6;
     windSpeedMs = (wsKmh / 3.6).toFixed(1);
-    
+
     // Inversion height diurnal calculation for +0h
     const currentHour = new Date().getHours();
     const angle = ((currentHour - 10) / 24) * 2 * Math.PI;
@@ -2066,13 +2063,13 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
     // Only use the ward that exactly matches the selected city — never fall back to [0]
     // (that would show Delhi/first-city data for every city and make all graphs identical)
     const wForecast = entry?.wards?.find(w => w.ward_id === forecastWardId) ?? null;
-    
+
     baselineAqi = wForecast ? Math.round(wForecast.predicted_aqi) : 0;
     mitigatedAqi = wForecast && wForecast.mitigated_aqi !== undefined ? Math.round(wForecast.mitigated_aqi) : getMitigatedVal(baselineAqi, selectedOffset);
-    
+
     const wsKmh = wForecast?.wind_speed_kmh || 12.6;
     windSpeedMs = (wsKmh / 3.6).toFixed(1);
-    
+
     // Inversion height diurnal calculation for future hours
     const futureHour = new Date(entry?.timestamp || new Date()).getHours();
     const angle = ((futureHour - 10) / 24) * 2 * Math.PI;
@@ -2125,7 +2122,7 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
   const mitigatedPointRadii = mitigatedDataset.map((_, idx) => idx === selectedOffset ? activePointRadius : 0);
   const mitigatedPointHoverRadii = mitigatedDataset.map((_, idx) => idx === selectedOffset ? activePointHoverRadius : 0);
 
-  const snapshot = (selectedOffset === 0) 
+  const snapshot = (selectedOffset === 0)
     ? { wards: state.wards.map(w => ({ ward_id: w.id, ward_name: w.name, center: w.center, predicted_aqi: w.aqi_in ?? w.current_aqi, mitigated_aqi: w.aqi_in ?? w.current_aqi, confidence: 1.0 })) }
     : (forecast && forecast.length > 0)
       ? forecast[Math.min(selectedOffset - 1, forecast.length - 1)]
@@ -2161,39 +2158,40 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
               // Show mitigated AQI on the map if active, fallback to predicted AQI
               const displayAqi = Math.round(w.mitigated_aqi !== undefined ? w.mitigated_aqi : w.predicted_aqi);
               return (
-              <Marker
-                key={w.ward_id}
-                position={w.center}
-                icon={createAqiIcon(displayAqi, isWard)}
-                eventHandlers={{
-                  click: () => {
-                    const matched = state.wards.find(ward => ward.id === w.ward_id);
-                    if (matched) onSelectWard(matched);
-                  }
-                }}
-              >
-                <Popup>
-                  <div>
-                    <strong>{w.ward_name}</strong><br />
-                    Expected AQI: <strong style={{ color: aqiColor(displayAqi) }}>
-                      {displayAqi}
-                    </strong><br />
-                    {w.mitigated_aqi !== undefined && Math.round(w.mitigated_aqi) !== Math.round(w.predicted_aqi) && (
-                      <span style={{ fontSize: '11px', color: '#10b981' }}>
-                        (Reduced from {Math.round(w.predicted_aqi)} baseline)<br />
-                      </span>
-                    )}
-                    Confidence: {(w.confidence * 100).toFixed(0)}%
-                  </div>
-                </Popup>
-              </Marker>
-            )})}
+                <Marker
+                  key={w.ward_id}
+                  position={w.center}
+                  icon={createAqiIcon(displayAqi, isWard)}
+                  eventHandlers={{
+                    click: () => {
+                      const matched = state.wards.find(ward => ward.id === w.ward_id);
+                      if (matched) onSelectWard(matched);
+                    }
+                  }}
+                >
+                  <Popup>
+                    <div>
+                      <strong>{w.ward_name}</strong><br />
+                      Expected AQI: <strong style={{ color: aqiColor(displayAqi) }}>
+                        {displayAqi}
+                      </strong><br />
+                      {w.mitigated_aqi !== undefined && Math.round(w.mitigated_aqi) !== Math.round(w.predicted_aqi) && (
+                        <span style={{ fontSize: '11px', color: '#10b981' }}>
+                          (Reduced from {Math.round(w.predicted_aqi)} baseline)<br />
+                        </span>
+                      )}
+                      Confidence: {(w.confidence * 100).toFixed(0)}%
+                    </div>
+                  </Popup>
+                </Marker>
+              )
+            })}
           </MapContainer>
         </div>
 
         <div className="right-panel wide-forecast-panel">
           <div className="card" style={{ padding: '20px', background: '#0c1220', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: 0, height: '100%', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-            
+
             {/* Card Header */}
             <div className="forecast-card-header">
               <div className="forecast-card-title">
@@ -2387,7 +2385,7 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
                       ticks: {
                         color: '#64748b',
                         font: { size: 10 },
-                        callback: function(val, index) {
+                        callback: function (val, index) {
                           return index % 12 === 0 ? `+${index}h` : '';
                         },
                         maxRotation: 0,
@@ -2485,26 +2483,26 @@ function AttributionView({ state, attribution, loading, onClickLocation, mapStyl
   if (!state) return null
 
   const SOURCE_ICONS = {
-    industrial:    <Factory size={13} color="#ef4444" style={{ marginRight: '4px', verticalAlign: 'middle' }} />,
-    vehicular:     <Car size={13} color="#3b82f6" style={{ marginRight: '4px', verticalAlign: 'middle' }} />,
-    construction:  <Hammer size={13} color="#f59e0b" style={{ marginRight: '4px', verticalAlign: 'middle' }} />,
+    industrial: <Factory size={13} color="#ef4444" style={{ marginRight: '4px', verticalAlign: 'middle' }} />,
+    vehicular: <Car size={13} color="#3b82f6" style={{ marginRight: '4px', verticalAlign: 'middle' }} />,
+    construction: <Hammer size={13} color="#f59e0b" style={{ marginRight: '4px', verticalAlign: 'middle' }} />,
     waste_burning: <Flame size={13} color="#10b981" style={{ marginRight: '4px', verticalAlign: 'middle' }} />,
-    background:    <Leaf size={13} color="#64748b" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+    background: <Leaf size={13} color="#64748b" style={{ marginRight: '4px', verticalAlign: 'middle' }} />
   }
 
   const POLLUTANT_COLORS = {
     'PM2.5': '#ef4444',
-    'PM10':  '#f97316',
-    'NO₂':   '#a855f7',
-    'SO₂':   '#eab308',
-    'CO':    '#64748b',
+    'PM10': '#f97316',
+    'NO₂': '#a855f7',
+    'SO₂': '#eab308',
+    'CO': '#64748b',
   }
 
   const LEVEL_COLORS = {
     'Hazardous': '#991b1b',
-    'Very High':  '#ef4444',
-    'Elevated':   '#f97316',
-    'Moderate':   '#eab308',
+    'Very High': '#ef4444',
+    'Elevated': '#f97316',
+    'Moderate': '#eab308',
     'Background': '#22c55e',
   }
 
@@ -2774,10 +2772,10 @@ function EnforcementView({ dispatches, onRefresh, onViewEvidence }) {
 
   return (
     <div style={{ padding: '0', marginTop: '16px' }}>
-      
+
       {/* Main 2-column layout */}
       <div className="telemetry-grid">
-        
+
         {/* LEFT: Pollution Hotspots List */}
         <div className="telemetry-column-left">
           <div className="telemetry-card" style={{ paddingBottom: '16px' }}>
@@ -2806,12 +2804,12 @@ function EnforcementView({ dispatches, onRefresh, onViewEvidence }) {
                 {scanning ? 'Scanning...' : 'Scan Now'}
               </button>
             </div>
-            
+
             {sortedDispatches.length > 0 ? (
               <div className="telemetry-list" style={{ maxHeight: '500px', overflowY: 'auto' }}>
                 {sortedDispatches.map((item, idx) => (
-                  <div 
-                    key={idx} 
+                  <div
+                    key={idx}
                     onClick={() => setSelectedIndex(idx)}
                     className="telemetry-list-item"
                     style={{
@@ -2846,9 +2844,8 @@ function EnforcementView({ dispatches, onRefresh, onViewEvidence }) {
           <div className="telemetry-card" style={{ display: 'flex', flexDirection: 'column', minHeight: '300px' }}>
             <div className="telemetry-card-title" style={{ marginBottom: '12px' }}>
               <span style={{ fontSize: '16px' }}>Prioritised Action</span>
-              <span style={{ fontSize: '10px', background: '#eff6ff', color: '#2563eb', padding: '2px 8px', borderRadius: '4px', fontWeight: '700' }}>AI RECOMMENDATION</span>
             </div>
-            
+
             {activeItem ? (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                 {/* Header info */}
@@ -2962,7 +2959,7 @@ function EnforcementView({ dispatches, onRefresh, onViewEvidence }) {
               </div>
             ) : (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '13px', textAlign: 'center', padding: '40px' }}>
-                {sortedDispatches.length === 0 
+                {sortedDispatches.length === 0
                   ? 'No pollution hotspots detected. All wards are within acceptable AQI limits.'
                   : 'Select a hotspot from the left panel to view prioritised actions.'
                 }
@@ -2980,15 +2977,15 @@ function EnforcementView({ dispatches, onRefresh, onViewEvidence }) {
 /* ── Citizens Advisory Popup ───────────────────────────────────────────── */
 
 const speakTemplates = {
-  en: (ward, aqi, level, advisory, precautions) => 
+  en: (ward, aqi, level, advisory, precautions) =>
     `${ward} Health Advisory. The AQI is ${aqi}, which is ${level}. Advisory: ${advisory}. Recommended precautions: ${precautions.join('. ')}`,
-  hi: (ward, aqi, level, advisory, precautions) => 
+  hi: (ward, aqi, level, advisory, precautions) =>
     `${ward} स्वास्थ्य परामर्श। वायु गुणवत्ता सूचकांक ${aqi} है, जो कि ${level} है। परामर्श: ${advisory}। अनुशंसित सावधानियां: ${precautions.join('। ')}`,
-  kn: (ward, aqi, level, advisory, precautions) => 
+  kn: (ward, aqi, level, advisory, precautions) =>
     `${ward} ಆರೋಗ್ಯ ಸಲಹೆ. ವಾಯು ಗುಣಮಟ್ಟ ಸೂಚ್ಯಂಕ ${aqi} ಆಗಿದೆ, ಇದು ${level} ಆಗಿದೆ. ಸಲಹೆ: ${advisory}. ಮುನ್ನೆಚ್ಚರಿಕೆಗಳು: ${precautions.join('. ')}`,
-  ta: (ward, aqi, level, advisory, precautions) => 
+  ta: (ward, aqi, level, advisory, precautions) =>
     `${ward} சுகாதார ஆலோசனை. காற்றின் தரக் குறியீடு ${aqi} ஆகும், இது ${level} நிலையில் உள்ளது. ஆலோசனை: ${advisory}. பரிந்துரைக்கப்பட்ட முன்னெச்சரிக்கைகள்: ${precautions.join('. ')}`,
-  te: (ward, aqi, level, advisory, precautions) => 
+  te: (ward, aqi, level, advisory, precautions) =>
     `${ward} ఆరోగ్య సలహా పత్రం. వాయు నాణ్యత సూచీ ${aqi} గా ఉంది, ఇది ${level} స్థాయి. సలహా: ${advisory}. తీసుకోవాల్సిన జాగ్రత్తలు: ${precautions.join('. ')}`
 };
 
@@ -3043,18 +3040,18 @@ const precautionTranslations = {
   }
 };
 
-function CitizensAdvisoryPopup({ 
-  state, 
-  advisory, 
-  lang, 
-  onChangeLang, 
-  profile, 
-  onChangeProfile, 
-  selectedWard, 
-  onSelectWard, 
-  isOpen, 
-  onToggle, 
-  onLoadAdvisory 
+function CitizensAdvisoryPopup({
+  state,
+  advisory,
+  lang,
+  onChangeLang,
+  profile,
+  onChangeProfile,
+  selectedWard,
+  onSelectWard,
+  isOpen,
+  onToggle,
+  onLoadAdvisory
 }) {
   const [nearbyPlaces, setNearbyPlaces] = useState(null)
   const [nearbyLoading, setNearbyLoading] = useState(false)
@@ -3138,13 +3135,13 @@ function CitizensAdvisoryPopup({
           name: el.tags?.name || (el.tags?.amenity === 'hospital' ? 'Hospital' : 'Medical Store'),
           type: el.tags?.amenity === 'hospital' ? 'hospital' : 'pharmacy',
           phone: el.tags?.phone || el.tags?.['contact:phone'] || el.tags?.['phone:mobile'] || el.tags?.['contact:mobile'] || null,
-          address: el.tags?.['addr:full'] || 
-                   [
-                     el.tags?.['addr:housenumber'] || el.tags?.['addr:housename'],
-                     el.tags?.['addr:street'],
-                     el.tags?.['addr:suburb'] || el.tags?.['addr:neighbourhood'] || el.tags?.['addr:place'],
-                     el.tags?.['addr:city']
-                   ].filter(Boolean).join(', ') || null,
+          address: el.tags?.['addr:full'] ||
+            [
+              el.tags?.['addr:housenumber'] || el.tags?.['addr:housename'],
+              el.tags?.['addr:street'],
+              el.tags?.['addr:suburb'] || el.tags?.['addr:neighbourhood'] || el.tags?.['addr:place'],
+              el.tags?.['addr:city']
+            ].filter(Boolean).join(', ') || null,
           lat: el.lat,
           lng: el.lon,
         }))
@@ -3186,7 +3183,7 @@ function CitizensAdvisoryPopup({
   return (
     <div className="advisory-widget-container">
       {/* Floating Trigger Button */}
-      <button 
+      <button
         className={`advisory-trigger-btn ${isOpen ? 'open' : ''}`}
         onClick={onToggle}
         title="Citizen Health Advisory Portal"
@@ -3222,7 +3219,7 @@ function CitizensAdvisoryPopup({
           {/* Advisory output */}
           {advisory ? (
             <div style={{ padding: '16px', overflowY: 'auto', maxHeight: 'calc(100vh - 250px)' }}>
-              
+
               {/* AQI Numerical Scale & Multi-color Scale */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
                 <span style={{ fontSize: '14px', fontWeight: '600', color: '#be123c' }}>{advisory.ward_name}</span>
@@ -3258,16 +3255,16 @@ function CitizensAdvisoryPopup({
                 <span>400</span>
                 <span>500+</span>
               </div>
-              
+
               {/* Analysis Section */}
               {advisory.reason && (
-                <div style={{ 
-                  marginTop: '16px', 
-                  padding: '14px 16px', 
-                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.3))', 
+                <div style={{
+                  marginTop: '16px',
+                  padding: '14px 16px',
+                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.3))',
                   backdropFilter: 'blur(16px)',
-                  borderRadius: '16px', 
-                  fontSize: '13.5px', 
+                  borderRadius: '16px',
+                  fontSize: '13.5px',
                   boxShadow: '0 8px 32px 0 rgba(225, 29, 72, 0.04)',
                   border: '1.5px solid rgba(254, 205, 211, 0.6)',
                   color: '#334155',
@@ -3293,7 +3290,7 @@ function CitizensAdvisoryPopup({
                   <span style={{ fontSize: '14.5px', fontWeight: '800', color: '#be123c', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <Sparkles size={16} color="#e11d48" /> AI Health Assistant
                   </span>
-                  
+
                   {/* Language Selector */}
                   <select
                     value={aiLang}
@@ -3326,11 +3323,11 @@ function CitizensAdvisoryPopup({
                     onChange={(e) => setAiQuestion(e.target.value)}
                     placeholder={
                       aiLang === 'kn' ? "ಈ AQI ನ ಆರೋಗ್ಯದ ಮೇಲಿನ ಪರಿಣಾಮಗಳ ಬಗ್ಗೆ ಏನೇ ಕೇಳಿ..." :
-                      aiLang === 'ml' ? "ഈ AQI-യുടെ ആരോഗ്യ പ്രത്യാഘാതങ്ങളെക്കുറിച്ച് എന്തും ചോദിക്കുക..." :
-                      aiLang === 'ta' ? "இந்த AQI இன் சுகாதார விளைவுகள் பற்றி ஏதேனும் கேளுங்கள்..." :
-                      aiLang === 'te' ? "ఈ AQI ఆరోగ్య ప్రభావాల గురించి ఏదైనా అడగండి..." :
-                      aiLang === 'hi' ? "इस AQI के स्वास्थ्य प्रभावों के बारे में कुछ भी पूछें..." :
-                      "Ask anything about health effects of this AQI..."
+                        aiLang === 'ml' ? "ഈ AQI-യുടെ ആരോഗ്യ പ്രത്യാഘാതങ്ങളെക്കുറിച്ച് എന്തും ചോദിക്കുക..." :
+                          aiLang === 'ta' ? "இந்த AQI இன் சுகாதார விளைவுகள் பற்றி ஏதேனும் கேளுங்கள்..." :
+                            aiLang === 'te' ? "ఈ AQI ఆరోగ్య ప్రభావాల గురించి ఏదైనా అడగండి..." :
+                              aiLang === 'hi' ? "इस AQI के स्वास्थ्य प्रभावों के बारे में कुछ भी पूछें..." :
+                                "Ask anything about health effects of this AQI..."
                     }
                     style={{
                       width: '100%',
@@ -3447,7 +3444,7 @@ function CitizensAdvisoryPopup({
                         <div style={{ fontWeight: '750', color: '#be123c', fontSize: '11px', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <AlertCircle size={12} color="#be123c" /> Nearby Emergency Resources
                         </div>
-                        
+
                         {/* Hospitals */}
                         {nearbyPlaces.filter(p => p.type === 'hospital').length > 0 && (
                           <div style={{ marginBottom: '8px' }}>
@@ -3538,7 +3535,7 @@ function PersonalAlertSubscriptionPopup({
   return (
     <div className="alert-subscription-widget-container">
       {/* Floating Trigger Button */}
-      <button 
+      <button
         className={`alert-trigger-btn ${isOpen ? 'open' : ''}`}
         onClick={onToggle}
         title="Personal Alert Subscription"
@@ -3685,7 +3682,7 @@ function EvidenceModal({ data, onClose }) {
   const [dispatched, setDispatched] = useState(false)
 
   const POLLUTANT_LIMITS = { pm25: 60, pm10: 100, no2: 40, so2: 40, co: 2, o3: 100 }
-  const POLLUTANT_UNITS  = { pm25: 'µg/m³', pm10: 'µg/m³', no2: 'µg/m³', so2: 'µg/m³', co: 'mg/m³', o3: 'µg/m³' }
+  const POLLUTANT_UNITS = { pm25: 'µg/m³', pm10: 'µg/m³', no2: 'µg/m³', so2: 'µg/m³', co: 'mg/m³', o3: 'µg/m³' }
   const POLLUTANT_LABELS = { pm25: 'PM2.5', pm10: 'PM10', no2: 'NO₂', so2: 'SO₂', co: 'CO', o3: 'O₃' }
 
   const sevColor = data.severity === 'severe' ? '#ef4444'
@@ -3712,7 +3709,7 @@ function EvidenceModal({ data, onClose }) {
           overflow: 'hidden'
         }}>
           <div style={{ position: 'absolute', top: 0, right: 0, width: '200px', height: '100%', opacity: 0.03, background: 'repeating-linear-gradient(45deg, #fff 0px, #fff 1px, transparent 1px, transparent 10px)', pointerEvents: 'none' }} />
-          
+
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', position: 'relative', zIndex: 1 }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
@@ -3852,19 +3849,23 @@ function EvidenceModal({ data, onClose }) {
             {data.nearby_sources?.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {data.nearby_sources.map((s, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  <div key={i} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                     padding: '8px 12px', background: '#f8fafc',
-                    borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                    borderRadius: '10px', border: '1px solid #e2e8f0'
+                  }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center' }}>
                         {s.category === 'industrial' ? <Factory size={13} color="#ef4444" /> :
-                         s.category === 'vehicular' ? <Car size={13} color="#3b82f6" /> :
-                         s.category === 'construction' ? <Hammer size={13} color="#f59e0b" /> :
-                         s.category === 'waste_burning' ? <Flame size={13} color="#10b981" /> :
-                         <MapPin size={13} color="#64748b" />}
+                          s.category === 'vehicular' ? <Car size={13} color="#3b82f6" /> :
+                            s.category === 'construction' ? <Hammer size={13} color="#f59e0b" /> :
+                              s.category === 'waste_burning' ? <Flame size={13} color="#10b981" /> :
+                                <MapPin size={13} color="#64748b" />}
                       </span>
-                      <span style={{ fontSize: '12px', color: '#334155', overflow: 'hidden',
-                        textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: '600' }}>{s.name}</span>
+                      <span style={{
+                        fontSize: '12px', color: '#334155', overflow: 'hidden',
+                        textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: '600'
+                      }}>{s.name}</span>
                     </div>
                     <span style={{ fontSize: '11px', color: '#64748b', flexShrink: 0, marginLeft: '8px', fontWeight: '600', background: '#e2e8f0', padding: '2px 8px', borderRadius: '6px' }}>
                       {s.distance_km} km
@@ -3879,9 +3880,11 @@ function EvidenceModal({ data, onClose }) {
 
           {/* ── Vulnerability flags ──────────────────── */}
           {data.vulnerability_flags?.length > 0 && (
-            <div style={{ marginTop: '20px', padding: '12px 14px',
+            <div style={{
+              marginTop: '20px', padding: '12px 14px',
               background: 'linear-gradient(135deg, rgba(245,158,11,0.06) 0%, rgba(245,158,11,0.02) 100%)',
-              border: '1px solid rgba(245,158,11,0.2)', borderRadius: '12px' }}>
+              border: '1px solid rgba(245,158,11,0.2)', borderRadius: '12px'
+            }}>
               <div style={{ fontSize: '12px', fontWeight: '750', color: '#b45309', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <AlertTriangle size={14} color="#d97706" />
                 <span>Vulnerable Population at Risk</span>
@@ -3925,9 +3928,11 @@ function EvidenceModal({ data, onClose }) {
                 <span>Dispatch Inspector</span>
               </button>
             ) : (
-              <div style={{ flex: 1, padding: '11px 20px', background: 'linear-gradient(135deg, rgba(34,197,94,0.1) 0%, rgba(34,197,94,0.05) 100%)',
+              <div style={{
+                flex: 1, padding: '11px 20px', background: 'linear-gradient(135deg, rgba(34,197,94,0.1) 0%, rgba(34,197,94,0.05) 100%)',
                 border: '1px solid rgba(34,197,94,0.3)', borderRadius: '12px', color: '#16a34a',
-                fontSize: '13px', fontWeight: '700', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '7px' }}>
+                fontSize: '13px', fontWeight: '700', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '7px'
+              }}>
                 <CheckCircle size={15} />
                 <span>Inspector Dispatched ✓</span>
               </div>
@@ -3963,42 +3968,42 @@ function EvidenceModal({ data, onClose }) {
 // Schools = schools within city limits (UDISE+ 2022-23).
 // Elderly % = population aged 60+ per Census 2011 district data.
 const CITY_DEMOGRAPHICS = {
-  "delhi":          { population: 32941000, hospitals: 941,  schools: 5441, elderly_pct: 7.9 },
-  "mumbai":         { population: 20667000, hospitals: 1068, schools: 3247, elderly_pct: 8.5 },
-  "kolkata":        { population: 14974000, hospitals: 512,  schools: 2891, elderly_pct: 10.2 },
-  "bengaluru":      { population: 13193000, hospitals: 714,  schools: 4812, elderly_pct: 6.8 },
-  "chennai":        { population: 10971000, hospitals: 612,  schools: 3101, elderly_pct: 9.1 },
-  "hyderabad":      { population: 10534000, hospitals: 498,  schools: 3640, elderly_pct: 7.3 },
-  "pune":           { population: 7764000,  hospitals: 389,  schools: 2980, elderly_pct: 8.2 },
-  "ahmedabad":      { population: 8059000,  hospitals: 421,  schools: 3211, elderly_pct: 8.0 },
-  "jaipur":         { population: 3975000,  hospitals: 241,  schools: 2100, elderly_pct: 9.0 },
-  "lucknow":        { population: 3681000,  hospitals: 198,  schools: 1890, elderly_pct: 7.5 },
-  "kanpur":         { population: 3144000,  hospitals: 162,  schools: 1540, elderly_pct: 8.1 },
-  "patna":          { population: 2119000,  hospitals: 138,  schools: 1210, elderly_pct: 7.2 },
-  "bhopal":         { population: 2371000,  hospitals: 154,  schools: 1340, elderly_pct: 7.8 },
-  "indore":         { population: 3201000,  hospitals: 187,  schools: 1720, elderly_pct: 7.9 },
-  "chandigarh":     { population: 1055000,  hospitals: 98,   schools: 632,  elderly_pct: 9.4 },
-  "srinagar":       { population: 1392000,  hospitals: 87,   schools: 820,  elderly_pct: 6.9 },
-  "shimla":         { population: 169578,   hospitals: 31,   schools: 210,  elderly_pct: 11.1 },
-  "dehradun":       { population: 803983,   hospitals: 61,   schools: 492,  elderly_pct: 9.7 },
-  "ranchi":         { population: 1120374,  hospitals: 72,   schools: 680,  elderly_pct: 6.8 },
-  "raipur":         { population: 1010087,  hospitals: 68,   schools: 590,  elderly_pct: 7.1 },
-  "bhubaneswar":    { population: 837737,   hospitals: 71,   schools: 520,  elderly_pct: 7.6 },
-  "guwahati":       { population: 957352,   hospitals: 64,   schools: 610,  elderly_pct: 6.3 },
-  "panaji":         { population: 114405,   hospitals: 18,   schools: 98,   elderly_pct: 12.8 },
-  "trivandrum":     { population: 1687406,  hospitals: 142,  schools: 890,  elderly_pct: 12.4 },
-  "kochi":          { population: 2119724,  hospitals: 198,  schools: 1040, elderly_pct: 11.9 },
-  "coimbatore":     { population: 2151466,  hospitals: 187,  schools: 1120, elderly_pct: 10.3 },
-  "visakhapatnam":  { population: 2035922,  hospitals: 152,  schools: 970,  elderly_pct: 7.8 },
-  "nagpur":         { population: 2497870,  hospitals: 173,  schools: 1380, elderly_pct: 9.2 },
-  "surat":          { population: 6081322,  hospitals: 298,  schools: 2140, elderly_pct: 5.9 },
-  "amritsar":       { population: 1183549,  hospitals: 91,   schools: 740,  elderly_pct: 9.8 },
-  "agra":           { population: 1746467,  hospitals: 112,  schools: 980,  elderly_pct: 8.6 },
-  "varanasi":       { population: 1432280,  hospitals: 98,   schools: 820,  elderly_pct: 8.9 },
-  "gurugram":       { population: 1514432,  hospitals: 187,  schools: 1240, elderly_pct: 5.1 },
-  "noida":          { population: 642381,   hospitals: 98,   schools: 820,  elderly_pct: 4.8 },
-  "mysore":         { population: 920550,   hospitals: 78,   schools: 640,  elderly_pct: 11.2 },
-  "jodhpur":        { population: 1137815,  hospitals: 84,   schools: 710,  elderly_pct: 8.7 },
+  "delhi": { population: 32941000, hospitals: 941, schools: 5441, elderly_pct: 7.9 },
+  "mumbai": { population: 20667000, hospitals: 1068, schools: 3247, elderly_pct: 8.5 },
+  "kolkata": { population: 14974000, hospitals: 512, schools: 2891, elderly_pct: 10.2 },
+  "bengaluru": { population: 13193000, hospitals: 714, schools: 4812, elderly_pct: 6.8 },
+  "chennai": { population: 10971000, hospitals: 612, schools: 3101, elderly_pct: 9.1 },
+  "hyderabad": { population: 10534000, hospitals: 498, schools: 3640, elderly_pct: 7.3 },
+  "pune": { population: 7764000, hospitals: 389, schools: 2980, elderly_pct: 8.2 },
+  "ahmedabad": { population: 8059000, hospitals: 421, schools: 3211, elderly_pct: 8.0 },
+  "jaipur": { population: 3975000, hospitals: 241, schools: 2100, elderly_pct: 9.0 },
+  "lucknow": { population: 3681000, hospitals: 198, schools: 1890, elderly_pct: 7.5 },
+  "kanpur": { population: 3144000, hospitals: 162, schools: 1540, elderly_pct: 8.1 },
+  "patna": { population: 2119000, hospitals: 138, schools: 1210, elderly_pct: 7.2 },
+  "bhopal": { population: 2371000, hospitals: 154, schools: 1340, elderly_pct: 7.8 },
+  "indore": { population: 3201000, hospitals: 187, schools: 1720, elderly_pct: 7.9 },
+  "chandigarh": { population: 1055000, hospitals: 98, schools: 632, elderly_pct: 9.4 },
+  "srinagar": { population: 1392000, hospitals: 87, schools: 820, elderly_pct: 6.9 },
+  "shimla": { population: 169578, hospitals: 31, schools: 210, elderly_pct: 11.1 },
+  "dehradun": { population: 803983, hospitals: 61, schools: 492, elderly_pct: 9.7 },
+  "ranchi": { population: 1120374, hospitals: 72, schools: 680, elderly_pct: 6.8 },
+  "raipur": { population: 1010087, hospitals: 68, schools: 590, elderly_pct: 7.1 },
+  "bhubaneswar": { population: 837737, hospitals: 71, schools: 520, elderly_pct: 7.6 },
+  "guwahati": { population: 957352, hospitals: 64, schools: 610, elderly_pct: 6.3 },
+  "panaji": { population: 114405, hospitals: 18, schools: 98, elderly_pct: 12.8 },
+  "trivandrum": { population: 1687406, hospitals: 142, schools: 890, elderly_pct: 12.4 },
+  "kochi": { population: 2119724, hospitals: 198, schools: 1040, elderly_pct: 11.9 },
+  "coimbatore": { population: 2151466, hospitals: 187, schools: 1120, elderly_pct: 10.3 },
+  "visakhapatnam": { population: 2035922, hospitals: 152, schools: 970, elderly_pct: 7.8 },
+  "nagpur": { population: 2497870, hospitals: 173, schools: 1380, elderly_pct: 9.2 },
+  "surat": { population: 6081322, hospitals: 298, schools: 2140, elderly_pct: 5.9 },
+  "amritsar": { population: 1183549, hospitals: 91, schools: 740, elderly_pct: 9.8 },
+  "agra": { population: 1746467, hospitals: 112, schools: 980, elderly_pct: 8.6 },
+  "varanasi": { population: 1432280, hospitals: 98, schools: 820, elderly_pct: 8.9 },
+  "gurugram": { population: 1514432, hospitals: 187, schools: 1240, elderly_pct: 5.1 },
+  "noida": { population: 642381, hospitals: 98, schools: 820, elderly_pct: 4.8 },
+  "mysore": { population: 920550, hospitals: 78, schools: 640, elderly_pct: 11.2 },
+  "jodhpur": { population: 1137815, hospitals: 84, schools: 710, elderly_pct: 8.7 },
 }
 
 function AnalyticsView({ state }) {
@@ -4006,7 +4011,7 @@ function AnalyticsView({ state }) {
 
   // Build top-level cities (no ward sub-localities) with real demographic data
   const cityList = state.wards
-    .filter(w => !w.id.includes('_') || !['delhi','mumbai','bengaluru','chennai','hyderabad','kolkata'].some(p => w.id.startsWith(p + '_')))
+    .filter(w => !w.id.includes('_') || !['delhi', 'mumbai', 'bengaluru', 'chennai', 'hyderabad', 'kolkata'].some(p => w.id.startsWith(p + '_')))
     .map(w => {
       const demo = CITY_DEMOGRAPHICS[w.id] || {}
       const aqi = Math.round(w.current_aqi ?? 0)
@@ -4143,7 +4148,7 @@ function AnalyticsView({ state }) {
                 const riskScore = c.aqi * (1 + (c.elderly_pct || 8) / 100)
                 const risk = riskScore > 280 ? { label: 'High', color: '#ef4444' }
                   : riskScore > 150 ? { label: 'Medium', color: '#f97316' }
-                  : { label: 'Low', color: '#22c55e' }
+                    : { label: 'Low', color: '#22c55e' }
                 return (
                   <tr key={c.id}>
                     <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{c.name}</td>
@@ -4155,9 +4160,11 @@ function AnalyticsView({ state }) {
                     <td style={{ color: '#94a3b8' }}>{c.schools ? c.schools.toLocaleString() : '—'}</td>
                     <td style={{ color: '#94a3b8' }}>{c.elderly_pct ? `${c.elderly_pct}%` : '—'}</td>
                     <td>
-                      <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px',
+                      <span style={{
+                        padding: '2px 8px', borderRadius: '4px', fontSize: '11px',
                         fontWeight: '700', background: `${risk.color}22`, color: risk.color,
-                        border: `1px solid ${risk.color}44` }}>
+                        border: `1px solid ${risk.color}44`
+                      }}>
                         {risk.label}
                       </span>
                     </td>

@@ -325,7 +325,8 @@ class EnforcementAgent:
     """Generates prioritised enforcement dispatch recommendations
     with evidence packages for field inspectors."""
 
-    THRESHOLDS = {"severe": 401, "very_poor": 301, "poor": 201}
+    # Updated to start from moderate (>= 101)
+    THRESHOLDS = {"severe": 401, "very_poor": 301, "poor": 201, "moderate": 101}
 
     def run(
         self,
@@ -336,7 +337,7 @@ class EnforcementAgent:
         hotspots: List[Dict[str, Any]] = []
 
         for reading in readings:
-            if reading["aqi"] < self.THRESHOLDS["poor"]:
+            if reading["aqi"] < self.THRESHOLDS["moderate"]:
                 continue
 
             severity = (
@@ -345,6 +346,8 @@ class EnforcementAgent:
                 else "very_poor"
                 if reading["aqi"] >= self.THRESHOLDS["very_poor"]
                 else "poor"
+                if reading["aqi"] >= self.THRESHOLDS["poor"]
+                else "moderate"
             )
 
             ward = next(
@@ -439,6 +442,7 @@ class EnforcementAgent:
             "severe_count": sum(1 for h in hotspots if h["severity"] == "severe"),
             "very_poor_count": sum(1 for h in hotspots if h["severity"] == "very_poor"),
             "poor_count": sum(1 for h in hotspots if h["severity"] == "poor"),
+            "moderate_count": sum(1 for h in hotspots if h["severity"] == "moderate"),
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 

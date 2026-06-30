@@ -813,7 +813,7 @@ Format your output EXACTLY as a JSON object with these keys:
 
 IMPORTANT: Return ONLY the raw JSON object. Do not wrap it in markdown block quotes or include backticks like ```json."""
 
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
                 headers = {"Content-Type": "application/json"}
                 payload = {
                     "contents": [{

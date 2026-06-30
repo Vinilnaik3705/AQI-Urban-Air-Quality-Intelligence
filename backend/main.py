@@ -635,7 +635,7 @@ Include practical safety precautions and health advice tailored to the current A
 Keep your answer clear and concise (under 4 sentences). Do not use markdown tags other than bold text if needed.
 """
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
         headers = {"Content-Type": "application/json"}
         payload = {
             "contents": [{

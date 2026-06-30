@@ -149,6 +149,7 @@ export default function App() {
   const [tab, setTab] = useState('command')
   const [state, setState] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [progress, setProgress] = useState(0)
   const [selectedWard, setSelectedWard] = useState(null)
 
   // Map style state
@@ -181,7 +182,10 @@ export default function App() {
   // ── Data Fetching ────────────────────────────────────────────────────
 
   const loadState = useCallback(async (isInitial = false) => {
-    if (isInitial) setLoading(true)
+    if (isInitial) {
+      setLoading(true)
+      setProgress(0)
+    }
     const data = await fetchJSON('/api/state?city=all')
     if (data) {
       setState(data)
@@ -191,8 +195,42 @@ export default function App() {
         setTargetZoom(5)
       }
     }
-    if (isInitial) setLoading(false)
   }, [])
+
+  // Simulated progress bar effect
+  useEffect(() => {
+    if (!loading) return
+    const interval = setInterval(() => {
+      setProgress(prev => {
+        if (prev < 99) {
+          const step = prev < 60 ? Math.floor(Math.random() * 8) + 4 : Math.floor(Math.random() * 3) + 1
+          return Math.min(prev + step, 99)
+        }
+        return prev
+      })
+    }, 60)
+    return () => clearInterval(interval)
+  }, [loading])
+
+  // Complete progress bar and release loading screen once API has returned data
+  useEffect(() => {
+    if (state && loading) {
+      const interval = setInterval(() => {
+        setProgress(prev => {
+          if (prev < 100) {
+            return prev + 2
+          } else {
+            clearInterval(interval)
+            setTimeout(() => {
+              setLoading(false)
+            }, 300)
+            return prev
+          }
+        })
+      }, 15)
+      return () => clearInterval(interval)
+    }
+  }, [state, loading])
 
   useEffect(() => {
     loadState(true)
@@ -282,9 +320,25 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="loading-state" style={{ height: '100vh' }}>
-        <div className="spinner" />
-        <span>Connecting to AQI Intervention Platform…</span>
+      <div className="aqify-loading-screen">
+        <div className="aqify-loader-wrapper">
+          <svg viewBox="0 0 500 150" className="aqify-svg">
+            <defs>
+              <clipPath id="wave-clip">
+                <g style={{ transform: `translate3d(0, ${110 - progress * 1.3}px, 0)` }}>
+                  <path className="wave-shape" d="M 0 0 Q 125 -15 250 0 T 500 0 T 750 0 T 1000 0 L 1000 200 L 0 200 Z" />
+                </g>
+              </clipPath>
+            </defs>
+            {/* Background Layer (dark gray/unfilled) */}
+            <text x="250" y="100" className="aqify-text-bg">AQIfy</text>
+            {/* Foreground Layer (clipped white/filled) */}
+            <text x="250" y="100" className="aqify-text-fg" clipPath="url(#wave-clip)">AQIfy</text>
+          </svg>
+          <div className="aqify-loading-text">
+            loading... {progress}%
+          </div>
+        </div>
       </div>
     )
   }

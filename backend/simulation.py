@@ -324,17 +324,14 @@ async def _fetch_real_aqi_openweather(lat: float, lng: float) -> Optional[Dict[s
                     so2 = (components.get("so2", 0.0) or 0.0) * 0.2
                     o3 = (components.get("o3", 0.0) or 0.0) * 0.35
                     
-                    # Global models underestimate ground-level dust/emissions in India.
-                    # Calibrate PM2.5 and PM10 to reflect realistic Indian urban baselines.
-                    if is_in_india(lat, lng):
-                        pm25_cal = max(32.0, pm25_raw * 2.5)
-                        pm10_cal = max(55.0, pm10_raw * 2.0)
+                    # Gentle CAMS calibration: CAMS overestimates by ~30% above 30µg/m³
+                    # Below 30µg/m³ the model is accurate, so we trust the raw value.
+                    if pm25_raw > 30.0:
+                        pm25_cal = 30.0 + (pm25_raw - 30.0) * 0.7
                     else:
-                        if pm25_raw > 30.0:
-                            pm25_cal = 30.0 + (pm25_raw - 30.0) * 0.7
-                        else:
-                            pm25_cal = pm25_raw
-                        pm10_cal = min(pm10_raw, pm25_cal * 2.0)
+                        pm25_cal = pm25_raw
+                    
+                    pm10_cal = min(pm10_raw, pm25_cal * 2.0)
                     
                     aqi_in = calculate_indian_aqi(pm25_cal, pm10_cal, no2, so2, co, o3)
                     
@@ -545,17 +542,11 @@ async def _fetch_real_aqi(lat: float, lng: float) -> Optional[Dict[str, Any]]:
                 co_raw = data.get("carbon_monoxide", 0) / 1000.0  # µg/m³ → mg/m³
                 o3_raw = data.get("ozone", 0) * 0.35
 
-                # Global models underestimate ground-level dust/emissions in India.
-                # Calibrate PM2.5 and PM10 to reflect realistic Indian urban baselines.
-                if is_in_india(lat, lng):
-                    pm25_cal = max(32.0, pm25_raw * 2.5)
-                    pm10_cal = max(55.0, pm10_raw * 2.0)
+                if pm25_raw > 30.0:
+                    pm25_cal = 30.0 + (pm25_raw - 30.0) * 0.7
                 else:
-                    if pm25_raw > 30.0:
-                        pm25_cal = 30.0 + (pm25_raw - 30.0) * 0.7
-                    else:
-                        pm25_cal = pm25_raw
-                    pm10_cal = min(pm10_raw, pm25_cal * 2.0)
+                    pm25_cal = pm25_raw
+                pm10_cal = min(pm10_raw, pm25_cal * 2.0)
 
                 aqi_val = calculate_indian_aqi(pm25_cal, pm10_cal, no2_raw, so2_raw, co_raw, o3_raw)
                 return {

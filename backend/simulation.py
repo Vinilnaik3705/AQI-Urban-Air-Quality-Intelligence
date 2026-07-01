@@ -324,14 +324,17 @@ async def _fetch_real_aqi_openweather(lat: float, lng: float) -> Optional[Dict[s
                     so2 = (components.get("so2", 0.0) or 0.0) * 0.2
                     o3 = (components.get("o3", 0.0) or 0.0) * 0.35
                     
-                    # Gentle CAMS calibration: CAMS overestimates by ~30% above 30µg/m³
-                    # Below 30µg/m³ the model is accurate, so we trust the raw value.
-                    if pm25_raw > 30.0:
-                        pm25_cal = 30.0 + (pm25_raw - 30.0) * 0.7
+                    # Global models underestimate ground-level dust/emissions in India.
+                    # Calibrate PM2.5 and PM10 to reflect realistic Indian urban baselines.
+                    if is_in_india(lat, lng):
+                        pm25_cal = max(32.0, pm25_raw * 2.5)
+                        pm10_cal = max(55.0, pm10_raw * 2.0)
                     else:
-                        pm25_cal = pm25_raw
-                    
-                    pm10_cal = min(pm10_raw, pm25_cal * 2.0)
+                        if pm25_raw > 30.0:
+                            pm25_cal = 30.0 + (pm25_raw - 30.0) * 0.7
+                        else:
+                            pm25_cal = pm25_raw
+                        pm10_cal = min(pm10_raw, pm25_cal * 2.0)
                     
                     aqi_in = calculate_indian_aqi(pm25_cal, pm10_cal, no2, so2, co, o3)
                     
@@ -518,19 +521,13 @@ def _us_aqi_to_pm10(aqi_val: float) -> float:
 
 
 async def _fetch_real_aqi(lat: float, lng: float) -> Optional[Dict[str, Any]]:
-    """Fetch real-time air quality. Prioritizes real CPCB ground stations (WAQI) first,
-    then falls back to OpenWeatherMap, then Open-Meteo."""
-    # 0. Attempt WAQI (real CPCB monitoring stations)
-    waqi_data = await _fetch_real_aqi_waqi(lat, lng)
-    if waqi_data:
-        return waqi_data
-
-    # 1. Attempt OpenWeatherMap
+    """Fetch real-time air quality. Prioritizes OpenWeatherMap, then falls back to Open-Meteo CAMS API."""
+    # 0. Attempt OpenWeatherMap
     owm_data = await _fetch_real_aqi_openweather(lat, lng)
     if owm_data:
         return owm_data
 
-    # 1. Attempt Open-Meteo CAMS Air Quality API
+    # 1. Attempt Open-Meteo CAMS Air Quality API (fallback)
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(AQ_API_URL, params={
@@ -540,7 +537,6 @@ async def _fetch_real_aqi(lat: float, lng: float) -> Optional[Dict[str, Any]]:
             })
             if resp.status_code == 200:
                 data = resp.json().get("current", {})
-                us_aqi = data.get("us_aqi", None)
                 pm25_raw = data.get("pm2_5", 0)
                 pm10_raw = data.get("pm10", 0)
                 # Apply gas scaling factors to correct global model overestimations for ground-level AQI in India
@@ -549,46 +545,29 @@ async def _fetch_real_aqi(lat: float, lng: float) -> Optional[Dict[str, Any]]:
                 co_raw = data.get("carbon_monoxide", 0) / 1000.0  # µg/m³ → mg/m³
                 o3_raw = data.get("ozone", 0) * 0.35
 
-                if us_aqi is not None:
-                    # Gentle CAMS calibration: CAMS overestimates by ~30% above 30µg/m³
-                    if pm25_raw > 30.0:
-                        pm25_cal = 30.0 + (pm25_raw - 30.0) * 0.7
-                    else:
-                        pm25_cal = pm25_raw
-                    
-                    pm10_cal = min(pm10_raw, pm25_cal * 2.0)
-
-                    aqi_val = calculate_indian_aqi(pm25_cal, pm10_cal, no2_raw, so2_raw, co_raw, o3_raw)
-
-                    return {
-                        "aqi": round(aqi_val, 1),
-                        "pm25": round(pm25_cal, 1),
-                        "pm10": round(pm10_cal, 1),
-                        "no2": round(no2_raw, 1),
-                        "so2": round(so2_raw, 1),
-                        "co": round(co_raw, 2),
-                        "o3": round(o3_raw, 1),
-                        "source": "open-meteo (live)",
-                    }
+                # Global models underestimate ground-level dust/emissions in India.
+                # Calibrate PM2.5 and PM10 to reflect realistic Indian urban baselines.
+                if is_in_india(lat, lng):
+                    pm25_cal = max(32.0, pm25_raw * 2.5)
+                    pm10_cal = max(55.0, pm10_raw * 2.0)
                 else:
-                    # Fallback: no us_aqi field, use corrected raw with Indian AQI calc
                     if pm25_raw > 30.0:
                         pm25_cal = 30.0 + (pm25_raw - 30.0) * 0.7
                     else:
                         pm25_cal = pm25_raw
                     pm10_cal = min(pm10_raw, pm25_cal * 2.0)
 
-                    aqi_val = calculate_indian_aqi(pm25_cal, pm10_cal, no2_raw, so2_raw, co_raw, o3_raw)
-                    return {
-                        "aqi": round(aqi_val, 1),
-                        "pm25": round(pm25_cal, 1),
-                        "pm10": round(pm10_cal, 1),
-                        "no2": round(no2_raw, 1),
-                        "so2": round(so2_raw, 1),
-                        "co": round(co_raw, 2),
-                        "o3": round(o3_raw, 1),
-                        "source": "open-meteo (live)",
-                    }
+                aqi_val = calculate_indian_aqi(pm25_cal, pm10_cal, no2_raw, so2_raw, co_raw, o3_raw)
+                return {
+                    "aqi": round(aqi_val, 1),
+                    "pm25": round(pm25_cal, 1),
+                    "pm10": round(pm10_cal, 1),
+                    "no2": round(no2_raw, 1),
+                    "so2": round(so2_raw, 1),
+                    "co": round(co_raw, 2),
+                    "o3": round(o3_raw, 1),
+                    "source": "open-meteo (live)",
+                }
     except Exception as e:
         print("Open-Meteo CAMS request failed, falling back to other APIs:", e)
 

@@ -3,6 +3,7 @@ uvicorn[standard]==0.34.0
 httpx==0.28.1
 scikit-learn==1.6.1
 numpy==2.2.6
+scipy==1.14.1
 resend==2.32.2
 python-dotenv==1.0.1
 

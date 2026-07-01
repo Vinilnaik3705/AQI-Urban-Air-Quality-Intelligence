@@ -5,21 +5,39 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Tuple, Optional
 from sklearn.ensemble import GradientBoostingRegressor
+from scipy.interpolate import PchipInterpolator
 from simulation import CITIES, DEFAULT_CITY, LIVE_CITIES, calculate_indian_aqi, _us_aqi_to_pm25, _us_aqi_to_pm10
 
 logger = logging.getLogger("AQIForecaster")
 
+# ── Constants ────────────────────────────────────────────────────────────────
+HORIZONS = [6, 12, 24, 36, 48, 72]          # anchor forecast horizons (hours)
+HISTORY_DAYS = 30                            # days of history to fetch for training
+RETRAIN_HOURS = 6                            # hours between model retrains
+GBM_PARAMS = dict(n_estimators=120, max_depth=5, learning_rate=0.08,
+                  subsample=0.85, min_samples_leaf=8, random_state=42)
+QUANTILE_LO = 0.10
+QUANTILE_HI = 0.90
+
+
 class AQIForecaster:
+    """Direct-horizon delta-target AQI forecaster with quantile uncertainty."""
+
     def __init__(self):
-        # Cache for trained models and their validation stats per city
-        # Structure: { city_key: { "pm25_model": model, "pm10_model": model, "last_trained": timestamp, "metrics": {...} } }
+        # Cache: { city_key: { "models": {h: model}, "q_lo": {h: model},
+        #          "q_hi": {h: model}, "last_trained": datetime, "metrics": {...},
+        #          "last_historical_data": data, "city_baseline_aqi": float } }
         self._models_cache: Dict[str, Dict[str, Any]] = {}
         self._cache_lock = asyncio.Lock()
-        self._retrain_interval = timedelta(hours=6)
+        self._retrain_interval = timedelta(hours=RETRAIN_HOURS)
 
-    async def get_historical_data(self, lat: float, lng: float, days: int = 14) -> Optional[Dict[str, List[float]]]:
-        """Fetch historical air quality and weather data from Open-Meteo.
-        Includes retry logic with exponential backoff for 429 rate limiting."""
+    # ══════════════════════════════════════════════════════════════════════════
+    # DATA FETCHING
+    # ══════════════════════════════════════════════════════════════════════════
+
+    async def get_historical_data(self, lat: float, lng: float,
+                                  days: int = HISTORY_DAYS) -> Optional[Dict[str, List[float]]]:
+        """Fetch historical hourly AQ + weather data from Open-Meteo (up to *days* days)."""
         end_date = datetime.now() - timedelta(days=1)
         start_date = end_date - timedelta(days=days)
         start_str = start_date.strftime("%Y-%m-%d")
@@ -27,162 +45,300 @@ class AQIForecaster:
 
         aq_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
         aq_params = {
-            "latitude": lat,
-            "longitude": lng,
-            "hourly": "pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,ozone,carbon_monoxide,us_aqi_pm2_5,us_aqi_pm10",
-            "start_date": start_str,
-            "end_date": end_str
+            "latitude": lat, "longitude": lng,
+            "hourly": "pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,ozone,"
+                      "carbon_monoxide,us_aqi_pm2_5,us_aqi_pm10",
+            "start_date": start_str, "end_date": end_str,
         }
 
         weather_url = "https://api.open-meteo.com/v1/forecast"
         weather_params = {
-            "latitude": lat,
-            "longitude": lng,
-            "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,precipitation",
-            "start_date": start_str,
-            "end_date": end_str
+            "latitude": lat, "longitude": lng,
+            "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,"
+                      "wind_direction_10m,precipitation,surface_pressure",
+            "start_date": start_str, "end_date": end_str,
         }
 
         max_retries = 4
-
         try:
             async with httpx.AsyncClient(timeout=20.0) as client:
-                # Fetch AQ data first
                 aq_resp = await client.get(aq_url, params=aq_params)
                 if aq_resp.status_code != 200:
-                    logger.error(f"Failed to fetch AQ historical data. Status: {aq_resp.status_code}")
+                    logger.error(f"AQ history fetch failed: {aq_resp.status_code}")
                     return None
 
-                # Fetch weather data with retry + backoff for 429
                 weather_resp = None
                 for attempt in range(max_retries):
                     weather_resp = await client.get(weather_url, params=weather_params)
                     if weather_resp.status_code == 200:
                         break
                     elif weather_resp.status_code == 429:
-                        wait_time = 5 * (2 ** attempt)  # 5s, 10s, 20s, 40s
-                        logger.warning(f"Weather API rate-limited (429). Retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
-                        await asyncio.sleep(wait_time)
+                        wait = 5 * (2 ** attempt)
+                        logger.warning(f"Weather 429 — retrying in {wait}s ({attempt+1}/{max_retries})")
+                        await asyncio.sleep(wait)
                     else:
-                        logger.error(f"Weather API returned status {weather_resp.status_code}")
+                        logger.error(f"Weather API status {weather_resp.status_code}")
                         return None
 
                 if weather_resp is None or weather_resp.status_code != 200:
-                    logger.error(f"Failed to fetch weather data after {max_retries} retries (429 rate limit)")
+                    logger.error(f"Weather fetch failed after {max_retries} retries")
                     return None
 
             aq_data = aq_resp.json().get("hourly", {})
             weather_data = weather_resp.json().get("hourly", {})
 
-            # Align timestamps
             times = aq_data.get("time", [])
             if not times:
                 return None
 
-            # Process PM2.5 and PM10 via reverse mapping of US AQI sub-indices to get realistic ground truth
+            # Reverse-map US AQI sub-indices to realistic PM concentrations
             raw_us_pm25 = aq_data.get("us_aqi_pm2_5", [])
             raw_us_pm10 = aq_data.get("us_aqi_pm10", [])
-            
-            pm25_list = []
-            pm10_list = []
+            pm25_list, pm10_list = [], []
             for idx in range(len(times)):
-                us_pm25_val = raw_us_pm25[idx] if idx < len(raw_us_pm25) and raw_us_pm25[idx] is not None else 0.0
-                us_pm10_val = raw_us_pm10[idx] if idx < len(raw_us_pm10) and raw_us_pm10[idx] is not None else 0.0
-                pm25_list.append(_us_aqi_to_pm25(us_pm25_val))
-                pm10_list.append(_us_aqi_to_pm10(us_pm10_val))
+                us25 = raw_us_pm25[idx] if idx < len(raw_us_pm25) and raw_us_pm25[idx] is not None else 0.0
+                us10 = raw_us_pm10[idx] if idx < len(raw_us_pm10) and raw_us_pm10[idx] is not None else 0.0
+                pm25_list.append(_us_aqi_to_pm25(us25))
+                pm10_list.append(_us_aqi_to_pm10(us10))
 
-            # Merge data into one dict
+            safe = lambda lst, default=0.0: [v if v is not None else default for v in lst]
+
             merged = {
                 "time": times,
                 "pm2_5": pm25_list,
                 "pm10": pm10_list,
-                "no2": [v if v is not None else 0.0 for v in aq_data.get("nitrogen_dioxide", [])],
-                "so2": [v if v is not None else 0.0 for v in aq_data.get("sulphur_dioxide", [])],
-                "o3": [v if v is not None else 0.0 for v in aq_data.get("ozone", [])],
-                "co": [co / 1000.0 if co is not None else 0.0 for co in aq_data.get("carbon_monoxide", [])], # convert ug/m3 to mg/m3
-                "temp": weather_data.get("temperature_2m", []),
-                "humidity": weather_data.get("relative_humidity_2m", []),
-                "wind_speed": weather_data.get("wind_speed_10m", []),
-                "wind_dir": weather_data.get("wind_direction_10m", []),
-                "precipitation": weather_data.get("precipitation", [])
+                "no2": safe(aq_data.get("nitrogen_dioxide", [])),
+                "so2": safe(aq_data.get("sulphur_dioxide", [])),
+                "o3": safe(aq_data.get("ozone", [])),
+                "co": [co / 1000.0 if co is not None else 0.0
+                       for co in aq_data.get("carbon_monoxide", [])],
+                "temp": safe(weather_data.get("temperature_2m", []), 25.0),
+                "humidity": safe(weather_data.get("relative_humidity_2m", []), 50.0),
+                "wind_speed": safe(weather_data.get("wind_speed_10m", []), 5.0),
+                "wind_dir": safe(weather_data.get("wind_direction_10m", []), 180.0),
+                "precipitation": safe(weather_data.get("precipitation", []), 0.0),
+                "pressure": safe(weather_data.get("surface_pressure", []), 1013.0),
             }
-
             return merged
         except Exception as e:
             logger.error(f"Exception during historical data fetch: {e}")
             return None
 
-    def build_features(self, data: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    async def get_forecast_weather(self, lat: float, lng: float,
+                                   hours: int = 72) -> Optional[Dict[str, List[float]]]:
+        """Fetch future weather forecast from Open-Meteo."""
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": lat, "longitude": lng,
+            "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,"
+                      "wind_direction_10m,precipitation,surface_pressure",
+            "forecast_days": min(max(hours // 24, 1), 3),
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, params=params)
+            if resp.status_code == 200:
+                d = resp.json().get("hourly", {})
+                return {
+                    "time": d.get("time", []),
+                    "temp": d.get("temperature_2m", []),
+                    "humidity": d.get("relative_humidity_2m", []),
+                    "wind_speed": d.get("wind_speed_10m", []),
+                    "wind_dir": d.get("wind_direction_10m", []),
+                    "precipitation": d.get("precipitation", []),
+                    "pressure": d.get("surface_pressure", []),
+                }
+        except Exception as e:
+            logger.error(f"Error fetching forecast weather: {e}")
+        return None
+
+    async def get_forecast_raw_aqi(self, lat: float, lng: float,
+                                   hours: int = 72) -> Optional[Dict[str, List[float]]]:
+        """Fetch raw Open-Meteo atmospheric forecast AQI elements."""
+        url = "https://air-quality-api.open-meteo.com/v1/air-quality"
+        params = {
+            "latitude": lat, "longitude": lng,
+            "hourly": "pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,ozone,carbon_monoxide",
+            "forecast_days": min(max(hours // 24, 1), 3),
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, params=params)
+            if resp.status_code == 200:
+                d = resp.json().get("hourly", {})
+                return {
+                    "time": d.get("time", []),
+                    "pm2_5": d.get("pm2_5", []),
+                    "pm10": d.get("pm10", []),
+                    "no2": d.get("nitrogen_dioxide", []),
+                    "so2": d.get("sulphur_dioxide", []),
+                    "o3": d.get("ozone", []),
+                    "co": [c / 1000.0 if c is not None else 0.0
+                           for c in d.get("carbon_monoxide", [])],
+                }
+        except Exception as e:
+            logger.error(f"Error fetching raw AQI forecast: {e}")
+        return None
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # FEATURE ENGINEERING
+    # ══════════════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _compute_aqi_series(data: Dict[str, Any]) -> List[float]:
+        """Compute the Indian AQI for every hourly timestep in the historical data."""
+        n = len(data["time"])
+        aqi_series = []
+        for i in range(n):
+            pm25 = data["pm2_5"][i] if data["pm2_5"][i] is not None else 0.0
+            pm10 = data["pm10"][i] if data["pm10"][i] is not None else 0.0
+            no2 = data["no2"][i] if data["no2"][i] is not None else 0.0
+            so2 = data["so2"][i] if data["so2"][i] is not None else 0.0
+            co = data["co"][i] if data["co"][i] is not None else 0.0
+            o3 = data["o3"][i] if data["o3"][i] is not None else 0.0
+            aqi_series.append(calculate_indian_aqi(pm25, pm10, no2, so2, co, o3))
+        return aqi_series
+
+    @staticmethod
+    def _rolling_stats(arr: List[float], idx: int, window: int) -> Tuple[float, float, float, float]:
+        """Return (mean, std, min, max) for arr[idx-window+1 : idx+1]."""
+        start = max(0, idx - window + 1)
+        segment = arr[start:idx + 1]
+        if not segment:
+            return 0.0, 0.0, 0.0, 0.0
+        a = np.array(segment, dtype=np.float64)
+        return float(np.mean(a)), float(np.std(a)), float(np.min(a)), float(np.max(a))
+
+    def build_horizon_datasets(self, data: Dict[str, Any], aqi_series: List[float],
+                               city_baseline_aqi: float
+                               ) -> Dict[int, Tuple[np.ndarray, np.ndarray]]:
         """
-        Build temporal, weather, and lag features.
-        Returns:
-            X: feature matrix
-            y_pm25: target vector for PM2.5
-            y_pm10: target vector for PM10
+        Build (X, y_delta) for each horizon h.
+        Target: delta = AQI(t+h) - AQI(t).
+        Features: anchor lags, rolling stats, weather at t+h, interactions, temporal.
         """
+        n = len(aqi_series)
         times = data["time"]
-        n_samples = len(times)
 
-        # Handle potential None values safely by replacing with defaults
-        pm25 = [x if x is not None else 30.0 for x in data["pm2_5"]]
-        pm10 = [x if x is not None else 60.0 for x in data["pm10"]]
-        temp = [x if x is not None else 25.0 for x in data["temp"]]
-        humidity = [x if x is not None else 50.0 for x in data["humidity"]]
-        wind_speed = [x if x is not None else 5.0 for x in data["wind_speed"]]
-        wind_dir = [x if x is not None else 180.0 for x in data["wind_dir"]]
-        precipitation = [x if x is not None else 0.0 for x in data["precipitation"]]
+        datasets: Dict[int, Tuple[List[List[float]], List[float]]] = {h: ([], []) for h in HORIZONS}
 
-        X = []
-        y_pm25 = []
-        y_pm10 = []
-
-        # We need lags of 1h and 24h. So we start from index 24.
-        for i in range(24, n_samples):
+        # We need 24 hours of lookback for lags, and h hours of look-ahead
+        for i in range(24, n):
             dt = datetime.fromisoformat(times[i])
-            hour = dt.hour
-            dayofweek = dt.weekday()
-            is_weekend = 1.0 if dayofweek >= 5 else 0.0
-            month = dt.month
 
-            # Wind direction sin/cos
-            wd_rad = np.radians(wind_dir[i])
-            wd_sin = np.sin(wd_rad)
-            wd_cos = np.cos(wd_rad)
+            # ── Anchor / persistence features ──
+            aqi_now = aqi_series[i]
+            aqi_lag1 = aqi_series[i - 1]
+            aqi_lag3 = aqi_series[max(0, i - 3)]
+            aqi_lag6 = aqi_series[max(0, i - 6)]
+            aqi_lag24 = aqi_series[max(0, i - 24)]
 
-            # Lags
-            pm25_lag1 = pm25[i-1]
-            pm25_lag24 = pm25[i-24]
-            pm10_lag1 = pm10[i-1]
-            pm10_lag24 = pm10[i-24]
+            # Rolling stats
+            mean6, std6, _, _ = self._rolling_stats(aqi_series, i, 6)
+            mean24, std24, min24, max24 = self._rolling_stats(aqi_series, i, 24)
 
-            feature_row = [
-                hour,
-                dayofweek,
-                is_weekend,
-                month,
-                temp[i],
-                humidity[i],
-                wind_speed[i],
-                wd_sin,
-                wd_cos,
-                precipitation[i],
-                pm25_lag1,
-                pm25_lag24,
-                pm10_lag1,
-                pm10_lag24
-            ]
-            X.append(feature_row)
-            y_pm25.append(pm25[i])
-            y_pm10.append(pm10[i])
+            # Current weather (at time t)
+            ws_now = data["wind_speed"][i] or 5.0
+            hum_now = data["humidity"][i] or 50.0
+            pres_now = data["pressure"][i] or 1013.0
 
-        return np.array(X), np.array(y_pm25), np.array(y_pm10)
+            for h in HORIZONS:
+                target_idx = i + h
+                if target_idx >= n:
+                    continue  # can't compute target
+
+                # ── Delta target ──
+                delta = aqi_series[target_idx] - aqi_now
+
+                # ── Weather at t+h (forecasted values) ──
+                ws_h = data["wind_speed"][target_idx] or 5.0
+                wd_h = data["wind_dir"][target_idx] or 180.0
+                hum_h = data["humidity"][target_idx] or 50.0
+                temp_h = data["temp"][target_idx] or 25.0
+                prec_h = data["precipitation"][target_idx] or 0.0
+                pres_h = data["pressure"][target_idx] or 1013.0
+
+                # ── Interaction / physical features ──
+                ventilation = ws_h * (100.0 / max(1.0, hum_h))  # wind / humidity proxy
+                wind_change = ws_h - ws_now                       # dispersion event
+                is_calm = 1.0 if ws_h < 2.0 else 0.0             # stagnation flag
+                pressure_trend = pres_h - pres_now                # falling → buildup
+                humidity_change = hum_h - hum_now
+
+                # Precipitation washout: has it rained in the 6h window before t+h?
+                precip_start = max(0, target_idx - 6)
+                precip_window = data["precipitation"][precip_start:target_idx + 1]
+                precip_washout = 1.0 if any((p or 0.0) > 0.5 for p in precip_window) else 0.0
+
+                # ── Temporal / calendar ──
+                dt_h = datetime.fromisoformat(times[target_idx])
+                hour_sin = np.sin(2 * np.pi * dt_h.hour / 24)
+                hour_cos = np.cos(2 * np.pi * dt_h.hour / 24)
+                dow = dt_h.weekday()
+                is_weekend = 1.0 if dow >= 5 else 0.0
+                is_rush = 1.0 if dt_h.hour in (8, 9, 10, 18, 19, 20, 21) else 0.0
+
+                # Wind direction sin/cos
+                wd_rad = np.radians(wd_h)
+
+                feature_row = [
+                    # Anchor / persistence (7)
+                    aqi_now, aqi_lag1, aqi_lag3, aqi_lag6, aqi_lag24,
+                    city_baseline_aqi,
+                    float(h),  # horizon indicator
+                    # Rolling stats (6)
+                    mean6, std6, mean24, std24, min24, max24,
+                    # Weather at t+h (6)
+                    ws_h, np.sin(wd_rad), np.cos(wd_rad), hum_h, temp_h, pres_h,
+                    # Precipitation at t+h (1)
+                    prec_h,
+                    # Interactions (6)
+                    ventilation, wind_change, is_calm, pressure_trend,
+                    humidity_change, precip_washout,
+                    # Temporal (4)
+                    hour_sin, hour_cos, is_weekend, is_rush,
+                ]
+
+                datasets[h][0].append(feature_row)
+                datasets[h][1].append(delta)
+
+        result = {}
+        for h in HORIZONS:
+            X_list, y_list = datasets[h]
+            if len(X_list) > 0:
+                result[h] = (np.array(X_list, dtype=np.float64),
+                             np.array(y_list, dtype=np.float64))
+        return result
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # WALK-FORWARD CROSS-VALIDATION & TRAINING
+    # ══════════════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _walk_forward_split(n_samples: int, n_folds: int = 3
+                            ) -> List[Tuple[np.ndarray, np.ndarray]]:
+        """Generate walk-forward (expanding window) train/val index splits."""
+        fold_size = n_samples // (n_folds + 1)
+        if fold_size < 24:
+            # Not enough data for multiple folds — single split
+            split = int(n_samples * 0.75)
+            return [(np.arange(split), np.arange(split, n_samples))]
+
+        splits = []
+        for fold in range(n_folds):
+            train_end = fold_size * (fold + 2)  # expanding window
+            val_start = train_end
+            val_end = min(train_end + fold_size, n_samples)
+            if val_end <= val_start:
+                continue
+            splits.append((np.arange(train_end), np.arange(val_start, val_end)))
+        return splits
 
     async def train_for_city(self, city_key: str, force: bool = False):
-        """Train models for a city if they do not exist or are stale."""
+        """Train direct-horizon delta-target models for a city."""
         async with self._cache_lock:
             cached = self._models_cache.get(city_key)
             now = datetime.now()
-
             if cached and not force:
                 if now - cached["last_trained"] < self._retrain_interval:
                     return
@@ -190,325 +346,380 @@ class AQIForecaster:
             city_conf = CITIES.get(city_key, CITIES[DEFAULT_CITY])
             lat, lng = city_conf["center"]
 
-            logger.info(f"Training ML models for city {city_key}...")
-            data = await self.get_historical_data(lat, lng, days=14)
+            logger.info(f"Training direct-horizon models for {city_key} ...")
+            data = await self.get_historical_data(lat, lng, days=HISTORY_DAYS)
             if not data:
-                logger.error(f"Cannot train model for {city_key}: failed to fetch historical data")
+                logger.error(f"Cannot train for {city_key}: no historical data")
                 return
 
-            X, y_pm25, y_pm10 = self.build_features(data)
-            if len(X) < 48:
-                logger.error(f"Cannot train model for {city_key}: insufficient data points ({len(X)})")
+            aqi_series = self._compute_aqi_series(data)
+            city_baseline_aqi = float(np.mean(aqi_series)) if aqi_series else 100.0
+
+            horizon_datasets = self.build_horizon_datasets(data, aqi_series, city_baseline_aqi)
+            if not horizon_datasets:
+                logger.error(f"Cannot train for {city_key}: insufficient samples")
                 return
 
-            # Split into train/validation (last 48 hours for validation)
-            split_idx = len(X) - 48
-            X_train, X_val = X[:split_idx], X[split_idx:]
-            y_pm25_train, y_pm25_val = y_pm25[:split_idx], y_pm25[split_idx:]
-            y_pm10_train, y_pm10_val = y_pm10[:split_idx], y_pm10[split_idx:]
+            models: Dict[int, GradientBoostingRegressor] = {}
+            q_lo_models: Dict[int, GradientBoostingRegressor] = {}
+            q_hi_models: Dict[int, GradientBoostingRegressor] = {}
 
-            pm25_model = GradientBoostingRegressor(n_estimators=50, max_depth=4, random_state=42)
-            pm10_model = GradientBoostingRegressor(n_estimators=50, max_depth=4, random_state=42)
+            # Aggregate validation metrics across horizons
+            all_mae, all_persist_mae = [], []
+            all_dir_correct, all_dir_total = 0, 0
 
-            pm25_model.fit(X_train, y_pm25_train)
-            pm10_model.fit(X_train, y_pm10_train)
+            for h in HORIZONS:
+                if h not in horizon_datasets:
+                    logger.warning(f"Skipping horizon {h}h for {city_key}: no data")
+                    continue
 
-            # Evaluate RMSE and compare to baseline on validation set
-            pm25_pred = pm25_model.predict(X_val)
-            pm10_pred = pm10_model.predict(X_val)
+                X, y_delta = horizon_datasets[h]
+                if len(X) < 48:
+                    logger.warning(f"Skipping horizon {h}h for {city_key}: only {len(X)} samples")
+                    continue
 
-            # Calculate actual AQI vs predicted AQI on validation set
-            val_aqi_act = []
-            val_aqi_pred = []
-            val_aqi_persist = []
-            val_aqi_raw_om = [] 
+                # ── Walk-forward CV to compute metrics ──
+                splits = self._walk_forward_split(len(X), n_folds=3)
+                fold_maes, fold_persist_maes = [], []
+                fold_dir_correct, fold_dir_total = 0, 0
 
-            # Last known PM2.5/PM10 before validation set for persistence baseline
-            persist_pm25 = y_pm25[split_idx - 1]
-            persist_pm10 = y_pm10[split_idx - 1]
-            persist_aqi = calculate_indian_aqi(
-                persist_pm25, persist_pm10, 
-                data["no2"][24 + split_idx - 1] or 0.0, 
-                data["so2"][24 + split_idx - 1] or 0.0, 
-                data["co"][24 + split_idx - 1] or 0.0, 
-                data["o3"][24 + split_idx - 1] or 0.0
-            )
+                for train_idx, val_idx in splits:
+                    X_tr, y_tr = X[train_idx], y_delta[train_idx]
+                    X_vl, y_vl = X[val_idx], y_delta[val_idx]
 
-            for i in range(48):
-                idx = 24 + split_idx + i
-                act_aqi = calculate_indian_aqi(
-                    y_pm25_val[i], y_pm10_val[i],
-                    data["no2"][idx] or 0.0,
-                    data["so2"][idx] or 0.0,
-                    data["co"][idx] or 0.0,
-                    data["o3"][idx] or 0.0
-                )
-                pred_aqi = calculate_indian_aqi(
-                    pm25_pred[i], pm10_pred[i],
-                    data["no2"][idx] or 0.0,
-                    data["so2"][idx] or 0.0,
-                    data["co"][idx] or 0.0,
-                    data["o3"][idx] or 0.0
-                )
-                val_aqi_act.append(act_aqi)
-                val_aqi_pred.append(pred_aqi)
-                val_aqi_persist.append(persist_aqi)
-                
-                # Raw Open-Meteo fallback
-                val_aqi_raw_om.append(act_aqi * np.random.uniform(0.85, 1.15))
+                    m = GradientBoostingRegressor(loss="huber", **GBM_PARAMS)
+                    m.fit(X_tr, y_tr)
+                    preds = m.predict(X_vl)
 
-            ml_rmse = float(np.sqrt(np.mean((np.array(val_aqi_act) - np.array(val_aqi_pred)) ** 2)))
-            persist_rmse = float(np.sqrt(np.mean((np.array(val_aqi_act) - np.array(val_aqi_persist)) ** 2)))
-            om_rmse = float(np.sqrt(np.mean((np.array(val_aqi_act) - np.array(val_aqi_raw_om)) ** 2)))
-            skill_score = float(1.0 - (ml_rmse / max(1.0, persist_rmse)))
+                    # MAE
+                    fold_maes.append(float(np.mean(np.abs(y_vl - preds))))
+                    # Persistence baseline: delta = 0 (AQI stays same)
+                    fold_persist_maes.append(float(np.mean(np.abs(y_vl))))
+                    # Directional accuracy
+                    dir_match = np.sign(preds) == np.sign(y_vl)
+                    fold_dir_correct += int(np.sum(dir_match))
+                    fold_dir_total += len(y_vl)
 
-            residuals = np.array(val_aqi_act) - np.array(val_aqi_pred)
-            residual_std = float(np.std(residuals))
+                all_mae.append(np.mean(fold_maes))
+                all_persist_mae.append(np.mean(fold_persist_maes))
+                all_dir_correct += fold_dir_correct
+                all_dir_total += fold_dir_total
+
+                # ── Train final models on all data ──
+                # Point estimate (Huber loss — robust to spikes)
+                model = GradientBoostingRegressor(loss="huber", **GBM_PARAMS)
+                model.fit(X, y_delta)
+                models[h] = model
+
+                # Quantile lo (10th percentile)
+                q_lo = GradientBoostingRegressor(loss="quantile", alpha=QUANTILE_LO, **GBM_PARAMS)
+                q_lo.fit(X, y_delta)
+                q_lo_models[h] = q_lo
+
+                # Quantile hi (90th percentile)
+                q_hi = GradientBoostingRegressor(loss="quantile", alpha=QUANTILE_HI, **GBM_PARAMS)
+                q_hi.fit(X, y_delta)
+                q_hi_models[h] = q_hi
+
+            if not models:
+                logger.error(f"No models trained for {city_key}")
+                return
+
+            avg_mae = float(np.mean(all_mae)) if all_mae else 0.0
+            avg_persist_mae = float(np.mean(all_persist_mae)) if all_persist_mae else 1.0
+            dir_acc = all_dir_correct / max(1, all_dir_total)
+            skill = 1.0 - (avg_mae / max(1.0, avg_persist_mae))
+
+            # Residual std for anomaly detection (from last fold's residuals)
+            # Use a conservative estimate
+            residual_std = max(5.0, avg_mae * 1.5)
 
             metrics = {
-                "ml_rmse": round(ml_rmse, 2),
-                "persistence_rmse": round(persist_rmse, 2),
-                "open_meteo_rmse": round(om_rmse, 2),
-                "skill_score": round(skill_score, 2),
-                "residual_std": max(5.0, round(residual_std, 2)),
-                "training_samples": len(X_train),
-                "validation_samples": len(X_val)
+                "ml_mae": round(avg_mae, 2),
+                "persistence_mae": round(avg_persist_mae, 2),
+                "directional_accuracy": round(dir_acc, 3),
+                "skill_score": round(skill, 3),
+                "residual_std": round(residual_std, 2),
+                "training_samples": sum(len(horizon_datasets[h][0]) for h in horizon_datasets),
+                "validation_samples": all_dir_total,
+                "horizons_trained": sorted(list(models.keys())),
             }
 
             self._models_cache[city_key] = {
-                "pm25_model": pm25_model,
-                "pm10_model": pm10_model,
+                "models": models,
+                "q_lo": q_lo_models,
+                "q_hi": q_hi_models,
                 "last_trained": now,
                 "metrics": metrics,
-                "last_historical_data": data 
+                "last_historical_data": data,
+                "aqi_series": aqi_series,
+                "city_baseline_aqi": city_baseline_aqi,
             }
-            logger.info(f"Successfully trained models for {city_key}. Metrics: {metrics}")
+            logger.info(f"Trained {len(models)} horizon models for {city_key}. "
+                        f"MAE={avg_mae:.1f} vs Persistence={avg_persist_mae:.1f}, "
+                        f"DirAcc={dir_acc:.1%}, Skill={skill:.3f}")
 
-    async def get_forecast_weather(self, lat: float, lng: float, hours: int = 72) -> Optional[Dict[str, List[float]]]:
-        """Fetch future weather forecast from Open-Meteo."""
-        url = "https://api.open-meteo.com/v1/forecast"
-        params = {
-            "latitude": lat,
-            "longitude": lng,
-            "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,precipitation",
-            "forecast_days": min(max(hours // 24, 1), 3)
-        }
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, params=params)
-            if resp.status_code == 200:
-                data = resp.json().get("hourly", {})
-                return {
-                    "time": data.get("time", []),
-                    "temp": data.get("temperature_2m", []),
-                    "humidity": data.get("relative_humidity_2m", []),
-                    "wind_speed": data.get("wind_speed_10m", []),
-                    "wind_dir": data.get("wind_direction_10m", []),
-                    "precipitation": data.get("precipitation", [])
-                }
-        except Exception as e:
-            logger.error(f"Error fetching forecast weather: {e}")
-        return None
+    # ══════════════════════════════════════════════════════════════════════════
+    # INFERENCE — DIRECT-HORIZON + SPLINE INTERPOLATION
+    # ══════════════════════════════════════════════════════════════════════════
 
-    async def get_forecast_raw_aqi(self, lat: float, lng: float, hours: int = 72) -> Optional[Dict[str, List[float]]]:
-        """Fetch raw Open-Meteo atmospheric forecast model AQI elements."""
-        url = "https://air-quality-api.open-meteo.com/v1/air-quality"
-        params = {
-            "latitude": lat,
-            "longitude": lng,
-            "hourly": "pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,ozone,carbon_monoxide",
-            "forecast_days": min(max(hours // 24, 1), 3)
-        }
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, params=params)
-            if resp.status_code == 200:
-                data = resp.json().get("hourly", {})
-                return {
-                    "time": data.get("time", []),
-                    "pm2_5": data.get("pm2_5", []),
-                    "pm10": data.get("pm10", []),
-                    "no2": data.get("nitrogen_dioxide", []),
-                    "so2": data.get("sulphur_dioxide", []),
-                    "o3": data.get("ozone", []),
-                    "co": [c / 1000.0 if c is not None else 0.0 for c in data.get("carbon_monoxide", [])]
-                }
-        except Exception as e:
-            logger.error(f"Error fetching raw AQI forecast: {e}")
-        return None
+    def _build_inference_features(self, aqi_series: List[float], data: Dict[str, Any],
+                                  now_idx: int, target_idx: int, h: int,
+                                  city_baseline_aqi: float,
+                                  forecast_weather: Optional[Dict[str, Any]],
+                                  fw_offset: int) -> List[float]:
+        """Build a single feature vector for inference at horizon h."""
+        aqi_now = aqi_series[now_idx]
+        aqi_lag1 = aqi_series[max(0, now_idx - 1)]
+        aqi_lag3 = aqi_series[max(0, now_idx - 3)]
+        aqi_lag6 = aqi_series[max(0, now_idx - 6)]
+        aqi_lag24 = aqi_series[max(0, now_idx - 24)]
+
+        mean6, std6, _, _ = self._rolling_stats(aqi_series, now_idx, 6)
+        mean24, std24, min24, max24 = self._rolling_stats(aqi_series, now_idx, 24)
+
+        # Current weather
+        ws_now = data["wind_speed"][-1] if data["wind_speed"] else 5.0
+        hum_now = data["humidity"][-1] if data["humidity"] else 50.0
+        pres_now = data["pressure"][-1] if data["pressure"] else 1013.0
+
+        # Weather at t+h — use forecast data
+        if forecast_weather and fw_offset < len(forecast_weather.get("wind_speed", [])):
+            ws_h = forecast_weather["wind_speed"][fw_offset] or 5.0
+            wd_h = forecast_weather["wind_dir"][fw_offset] or 180.0
+            hum_h = forecast_weather["humidity"][fw_offset] or 50.0
+            temp_h = forecast_weather["temp"][fw_offset] or 25.0
+            prec_h = forecast_weather["precipitation"][fw_offset] or 0.0
+            pres_h = forecast_weather["pressure"][fw_offset] or 1013.0
+        else:
+            # Fallback to last known weather
+            ws_h = ws_now
+            wd_h = data["wind_dir"][-1] if data["wind_dir"] else 180.0
+            hum_h = hum_now
+            temp_h = data["temp"][-1] if data["temp"] else 25.0
+            prec_h = 0.0
+            pres_h = pres_now
+
+        # Interactions
+        ventilation = ws_h * (100.0 / max(1.0, hum_h))
+        wind_change = ws_h - ws_now
+        is_calm = 1.0 if ws_h < 2.0 else 0.0
+        pressure_trend = pres_h - pres_now
+        humidity_change = hum_h - hum_now
+
+        # Precipitation washout: check forecast 6h window before t+h
+        precip_washout = 0.0
+        if forecast_weather:
+            pw_start = max(0, fw_offset - 6)
+            pw_slice = forecast_weather.get("precipitation", [])[pw_start:fw_offset + 1]
+            if any((p or 0.0) > 0.5 for p in pw_slice):
+                precip_washout = 1.0
+
+        # Temporal at t+h
+        future_dt = datetime.now() + timedelta(hours=h)
+        hour_sin = np.sin(2 * np.pi * future_dt.hour / 24)
+        hour_cos = np.cos(2 * np.pi * future_dt.hour / 24)
+        is_weekend = 1.0 if future_dt.weekday() >= 5 else 0.0
+        is_rush = 1.0 if future_dt.hour in (8, 9, 10, 18, 19, 20, 21) else 0.0
+
+        wd_rad = np.radians(wd_h)
+
+        return [
+            aqi_now, aqi_lag1, aqi_lag3, aqi_lag6, aqi_lag24,
+            city_baseline_aqi, float(h),
+            mean6, std6, mean24, std24, min24, max24,
+            ws_h, np.sin(wd_rad), np.cos(wd_rad), hum_h, temp_h, pres_h,
+            prec_h,
+            ventilation, wind_change, is_calm, pressure_trend,
+            humidity_change, precip_washout,
+            hour_sin, hour_cos, is_weekend, is_rush,
+        ]
 
     async def generate_ml_forecast(self, city_key: str, hours: int = 72) -> Dict[str, Any]:
-        """Generate full ML-based forecast grid with metrics and anomaly checks."""
+        """Generate ML forecast using direct-horizon delta-target models + spline interpolation."""
         city_conf = CITIES.get(city_key, CITIES[DEFAULT_CITY])
         lat, lng = city_conf["center"]
 
-        # Ensure model is trained
         await self.train_for_city(city_key)
 
         model_info = self._models_cache.get(city_key)
         if not model_info:
-            logger.warning(f"No model found for {city_key}, generating basic fallback forecast.")
+            logger.warning(f"No model for {city_key}, using fallback.")
             return self._generate_fallback(city_key, hours)
 
-        # Get forecast weather and raw atmospheric AQI elements
+        # Fetch forecast inputs
         forecast_weather, forecast_raw_aqi = await asyncio.gather(
             self.get_forecast_weather(lat, lng, hours),
-            self.get_forecast_raw_aqi(lat, lng, hours)
+            self.get_forecast_raw_aqi(lat, lng, hours),
         )
 
         if not forecast_weather or not forecast_raw_aqi:
-            logger.warning(f"Failed to fetch forecast inputs for {city_key}, generating basic fallback forecast.")
+            logger.warning(f"Forecast inputs failed for {city_key}, using fallback.")
             return self._generate_fallback(city_key, hours)
 
-        pm25_model = model_info["pm25_model"]
-        pm10_model = model_info["pm10_model"]
+        models = model_info["models"]
+        q_lo_models = model_info["q_lo"]
+        q_hi_models = model_info["q_hi"]
         metrics = model_info["metrics"]
-        hist_data = model_info["last_historical_data"]
+        data = model_info["last_historical_data"]
+        aqi_series = model_info["aqi_series"]
+        city_baseline = model_info["city_baseline_aqi"]
 
-        # Prep lag seed from the end of historical data
-        hist_pm25 = [x if x is not None else 30.0 for x in hist_data["pm2_5"]]
-        hist_pm10 = [x if x is not None else 60.0 for x in hist_data["pm10"]]
+        now_idx = len(aqi_series) - 1
+        current_aqi = aqi_series[now_idx]
 
-        pm25_window = list(hist_pm25[-24:])
-        pm10_window = list(hist_pm10[-24:])
+        # ── Predict at anchor horizons ──
+        anchor_hours = []
+        anchor_aqi = []
+        anchor_lo = []
+        anchor_hi = []
 
-        # Current actual values (t = 0) serve as persistence baseline
-        current_pm25 = pm25_window[-1]
-        current_pm10 = pm10_window[-1]
-        current_no2 = hist_data["no2"][-1] or 0.0
-        current_so2 = hist_data["so2"][-1] or 0.0
-        current_co = hist_data["co"][-1] or 0.0
-        current_o3 = hist_data["o3"][-1] or 0.0
-        current_aqi = calculate_indian_aqi(current_pm25, current_pm10, current_no2, current_so2, current_co, current_o3)
+        for h in HORIZONS:
+            if h > hours:
+                break
+            if h not in models:
+                continue
 
+            features = self._build_inference_features(
+                aqi_series, data, now_idx, now_idx + h, h,
+                city_baseline, forecast_weather, h - 1,
+            )
+
+            delta_pred = float(models[h].predict([features])[0])
+            pred_aqi = max(0.0, min(500.0, current_aqi + delta_pred))
+
+            # Quantile bands
+            if h in q_lo_models:
+                delta_lo = float(q_lo_models[h].predict([features])[0])
+                lo_aqi = max(0.0, min(500.0, current_aqi + delta_lo))
+            else:
+                lo_aqi = max(0.0, pred_aqi - 15.0)
+
+            if h in q_hi_models:
+                delta_hi = float(q_hi_models[h].predict([features])[0])
+                hi_aqi = max(0.0, min(500.0, current_aqi + delta_hi))
+            else:
+                hi_aqi = min(500.0, pred_aqi + 15.0)
+
+            # Ensure ordering: lo <= pred <= hi
+            lo_aqi = min(lo_aqi, pred_aqi)
+            hi_aqi = max(hi_aqi, pred_aqi)
+
+            anchor_hours.append(h)
+            anchor_aqi.append(pred_aqi)
+            anchor_lo.append(lo_aqi)
+            anchor_hi.append(hi_aqi)
+
+        if not anchor_hours:
+            return self._generate_fallback(city_key, hours)
+
+        # ── Interpolate hourly via PCHIP (monotone cubic) ──
+        # Add t=0 anchor
+        interp_hours = [0] + anchor_hours
+        interp_aqi = [current_aqi] + anchor_aqi
+        interp_lo = [current_aqi] + anchor_lo
+        interp_hi = [current_aqi] + anchor_hi
+
+        all_hours = np.arange(0, hours + 1)  # 0 to 72
+
+        if len(interp_hours) >= 2:
+            spline_aqi = PchipInterpolator(interp_hours, interp_aqi)(all_hours)
+            spline_lo = PchipInterpolator(interp_hours, interp_lo)(all_hours)
+            spline_hi = PchipInterpolator(interp_hours, interp_hi)(all_hours)
+        else:
+            # Only one point — flat line
+            spline_aqi = np.full(len(all_hours), current_aqi)
+            spline_lo = np.full(len(all_hours), current_aqi - 10)
+            spline_hi = np.full(len(all_hours), current_aqi + 10)
+
+        # Clamp
+        spline_aqi = np.clip(spline_aqi, 0, 500)
+        spline_lo = np.clip(spline_lo, 0, 500)
+        spline_hi = np.clip(spline_hi, 0, 500)
+
+        # ── Build hourly grid ──
         grid = []
-        times = forecast_weather["time"]
-        limit = min(hours, len(times), len(forecast_raw_aqi["time"]))
+        fw_times = forecast_weather.get("time", [])
+        limit = min(hours, len(fw_times), len(forecast_raw_aqi.get("time", [])))
 
-        for h in range(limit):
-            dt = datetime.fromisoformat(times[h])
+        for h_offset in range(limit):
+            h_idx = h_offset + 1  # hour_offset is 1-based in the output
+            dt = datetime.fromisoformat(fw_times[h_offset])
+
+            predicted_aqi = float(spline_aqi[h_idx]) if h_idx < len(spline_aqi) else float(spline_aqi[-1])
+            conf_lo = float(spline_lo[h_idx]) if h_idx < len(spline_lo) else float(spline_lo[-1])
+            conf_hi = float(spline_hi[h_idx]) if h_idx < len(spline_hi) else float(spline_hi[-1])
+
+            # Ensure ordering
+            conf_lo = min(conf_lo, predicted_aqi)
+            conf_hi = max(conf_hi, predicted_aqi)
+
+            # Weather at this hour
+            ws = (forecast_weather["wind_speed"][h_offset] or 5.0)
+            wd = (forecast_weather["wind_dir"][h_offset] or 180.0)
+
+            # Open-Meteo raw AQI
+            om_pm25 = forecast_raw_aqi["pm2_5"][h_offset] or 0.0
+            om_pm10 = forecast_raw_aqi["pm10"][h_offset] or 0.0
+            om_no2 = forecast_raw_aqi["no2"][h_offset] or 0.0
+            om_so2 = forecast_raw_aqi["so2"][h_offset] or 0.0
+            om_co = forecast_raw_aqi["co"][h_offset] or 0.0
+            om_o3 = forecast_raw_aqi["o3"][h_offset] or 0.0
+            open_meteo_raw_aqi = min(calculate_indian_aqi(
+                om_pm25, om_pm10, om_no2, om_so2, om_co, om_o3), 500.0)
+
+            # ── Mitigation simulation ──
             hour = dt.hour
-            dayofweek = dt.weekday()
-            is_weekend = 1.0 if dayofweek >= 5 else 0.0
-            month = dt.month
-
-            # Weather
-            temp = forecast_weather["temp"][h] or 25.0
-            hum = forecast_weather["humidity"][h] or 50.0
-            ws = forecast_weather["wind_speed"][h] or 5.0
-            wd = forecast_weather["wind_dir"][h] or 180.0
-            prec = forecast_weather["precipitation"][h] or 0.0
-
-            wd_rad = np.radians(wd)
-            wd_sin = np.sin(wd_rad)
-            wd_cos = np.cos(wd_rad)
-
-            # Lags
-            pm25_lag1 = pm25_window[-1]
-            pm25_lag24 = pm25_window[-24]
-            pm10_lag1 = pm10_window[-1]
-            pm10_lag24 = pm10_window[-24]
-
-            feature_row = [
-                hour,
-                dayofweek,
-                is_weekend,
-                month,
-                temp,
-                hum,
-                ws,
-                wd_sin,
-                wd_cos,
-                prec,
-                pm25_lag1,
-                pm25_lag24,
-                pm10_lag1,
-                pm10_lag24
-            ]
-
-            # Predict PM2.5 & PM10
-            pred_pm25_val = float(pm25_model.predict([feature_row])[0])
-            pred_pm10_val = float(pm10_model.predict([feature_row])[0])
-
-            # Ensure non-negative and cap at realistic levels for the model
-            pred_pm25_val = max(0.0, min(pred_pm25_val, 200.0))
-            pred_pm10_val = max(0.0, min(pred_pm10_val, 350.0))
-
-            # Update rolling window
-            pm25_window.append(pred_pm25_val)
-            pm10_window.append(pred_pm10_val)
-            pm25_window.pop(0)
-            pm10_window.pop(0)
-
-            # Read open-meteo raw pollutant values at hour h
-            om_pm25 = forecast_raw_aqi["pm2_5"][h] or 0.0
-            om_pm10 = forecast_raw_aqi["pm10"][h] or 0.0
-            om_no2 = forecast_raw_aqi["no2"][h] or 0.0
-            om_so2 = forecast_raw_aqi["so2"][h] or 0.0
-            om_co = forecast_raw_aqi["co"][h] or 0.0
-            om_o3 = forecast_raw_aqi["o3"][h] or 0.0
-
-
-            # Calculate AQIs and cap at realistic ceiling (500.0 for Indian NAQI scale)
-            predicted_aqi = min(calculate_indian_aqi(pred_pm25_val, pred_pm10_val, om_no2, om_so2, om_co, om_o3), 500.0)
-            open_meteo_raw_aqi = min(calculate_indian_aqi(om_pm25, om_pm10, om_no2, om_so2, om_co, om_o3), 500.0)
-
-            # Calculate boundary layer / inversion height diurnal cycle
             angle = ((hour - 10) / 24) * 2 * np.pi
             inv_height = 700 - 400 * np.cos(angle)
 
-            # Interventions are more effective in stagnant air (low wind speed) and low boundary layer where pollutants are trapped
-            ws_factor = np.exp(-ws / 5.0)  # low wind = higher localized retention of intervention
-            inv_factor = 1.0 + (500.0 / max(100.0, inv_height))  # lower mixing height = higher local concentration/reduction impact
-            time_factor = 1.0 - np.exp(-(h + 1) / 12.0)
+            ws_factor = np.exp(-ws / 5.0)
+            inv_factor = 1.0 + (500.0 / max(100.0, inv_height))
+            time_factor = 1.0 - np.exp(-(h_idx) / 12.0)
 
-            # Simulated mitigation effect on predicted PM concentrations (up to 20-30% reduction depending on weather conditions)
-            mit_pm25 = max(0.0, pred_pm25_val * (1.0 - (0.15 * ws_factor * inv_factor * time_factor)))
-            mit_pm10 = max(0.0, pred_pm10_val * (1.0 - (0.20 * ws_factor * inv_factor * time_factor)))
-            
-            mitigated_aqi = min(calculate_indian_aqi(mit_pm25, mit_pm10, om_no2, om_so2, om_co, om_o3), 500.0)
-            
-            confidence_val = max(0.30, 0.95 - (h * 0.007))
-            
-            uncertainty_margin = metrics["residual_std"] * 0.4 * np.sqrt(h + 1)
-            confidence_low = max(0.0, predicted_aqi - uncertainty_margin)
-            confidence_high = min(500.0, predicted_aqi + uncertainty_margin)
+            mitigation_pct = 0.18 * ws_factor * inv_factor * time_factor
+            mitigated_aqi = max(0.0, min(500.0, predicted_aqi * (1.0 - mitigation_pct)))
+
+            # Confidence decays with horizon
+            confidence_val = max(0.30, 0.95 - (h_idx * 0.007))
 
             grid.append({
                 "timestamp": dt.isoformat(),
-                "hour_offset": h + 1,
+                "hour_offset": h_idx,
                 "predicted_aqi": round(predicted_aqi, 1),
                 "mitigated_aqi": round(mitigated_aqi, 1),
-                "confidence_low": round(confidence_low, 1),
-                "confidence_high": round(confidence_high, 1),
+                "confidence_low": round(max(0.0, conf_lo), 1),
+                "confidence_high": round(min(500.0, conf_hi), 1),
                 "open_meteo_raw": round(open_meteo_raw_aqi, 1),
                 "persistence_baseline": round(current_aqi, 1),
                 "confidence": round(confidence_val, 2),
                 "wind_speed_kmh": round(ws, 1),
-                "wind_direction_deg": round(wd, 1)
+                "wind_direction_deg": round(wd, 1),
             })
 
-        anomalies = []
-        
         return {
             "city": city_key,
-            "model_type": "gradient_boosting_ensemble",
+            "model_type": "direct_horizon_gbm_ensemble",
             "grid": grid,
             "accuracy": metrics,
-            "anomalies": anomalies
+            "anomalies": [],
         }
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # FALLBACK & ANOMALY
+    # ══════════════════════════════════════════════════════════════════════════
 
     def _generate_fallback(self, city_key: str, hours: int = 72) -> Dict[str, Any]:
         """Simple fallback forecast when APIs or training fails."""
         grid = []
         now = datetime.now()
         base_aqi = 120.0
-        
+
         for h in range(hours):
             future = now + timedelta(hours=h)
             diurnal = 15.0 * np.sin(2 * np.pi * (future.hour - 8) / 24)
             pred_aqi = max(10.0, base_aqi + diurnal + np.random.normal(0, 5))
-            
+
             grid.append({
                 "timestamp": future.isoformat(),
                 "hour_offset": h + 1,
@@ -520,7 +731,7 @@ class AQIForecaster:
                 "persistence_baseline": round(base_aqi, 1),
                 "confidence": round(max(0.30, 0.90 - h * 0.008), 2),
                 "wind_speed_kmh": 12.0,
-                "wind_direction_deg": 180.0
+                "wind_direction_deg": 180.0,
             })
 
         return {
@@ -528,35 +739,36 @@ class AQIForecaster:
             "model_type": "persistence_fallback",
             "grid": grid,
             "accuracy": {
-                "ml_rmse": 0.0,
-                "persistence_rmse": 0.0,
-                "open_meteo_rmse": 0.0,
+                "ml_mae": 0.0,
+                "persistence_mae": 0.0,
+                "directional_accuracy": 0.0,
                 "skill_score": 0.0,
                 "residual_std": 10.0,
                 "training_samples": 0,
-                "validation_samples": 0
+                "validation_samples": 0,
+                "horizons_trained": [],
             },
-            "anomalies": []
+            "anomalies": [],
         }
 
-    def detect_anomaly(self, predicted_aqi: float, actual_aqi: float, residual_std: float) -> Optional[Dict[str, Any]]:
+    def detect_anomaly(self, predicted_aqi: float, actual_aqi: float,
+                       residual_std: float) -> Optional[Dict[str, Any]]:
         """Identify if actual reading is an anomaly compared to prediction."""
         deviation = actual_aqi - predicted_aqi
         threshold = 2.0 * residual_std
         if abs(deviation) > threshold:
             severity = "warning" if abs(deviation) < 3.0 * residual_std else "critical"
-            cause = "Unknown localized event"
             if deviation > 0:
                 cause = "Potential crop burning, industrial blast, or major fire event"
             else:
                 cause = "Unusually strong wind clearing pollutants or sudden rainfall"
-                
+
             return {
                 "detected_at": datetime.now().isoformat(),
                 "predicted": round(predicted_aqi, 1),
                 "actual": round(actual_aqi, 1),
                 "deviation": round(deviation, 1),
                 "severity": severity,
-                "possible_cause": cause
+                "possible_cause": cause,
             }
         return None

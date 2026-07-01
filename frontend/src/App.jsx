@@ -2431,23 +2431,23 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
                 </summary>
                 <div style={{ padding: '12px', background: '#080d1a', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.03)', marginTop: '4px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '600' }}>ML Forecast Performance (Holdout Evaluation)</span>
+                    <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '600' }}>ML Forecast Performance (Walk-Forward CV)</span>
                     <span style={{ fontSize: '11px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '1px 5px', borderRadius: '4px', fontWeight: '500' }}>
-                      Model: Gradient Boosting
+                      Model: Direct-Horizon GBM
                     </span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', textAlign: 'center' }}>
                     <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px', borderRadius: '6px' }}>
-                      <div style={{ fontSize: '10px', color: '#64748b' }}>ML RMSE</div>
-                      <div style={{ fontSize: '12px', fontWeight: '600', color: '#ef4444', marginTop: '2px' }}>{accuracy.ml_rmse}</div>
+                      <div style={{ fontSize: '10px', color: '#64748b' }}>ML MAE</div>
+                      <div style={{ fontSize: '12px', fontWeight: '600', color: '#ef4444', marginTop: '2px' }}>{accuracy.ml_mae ?? accuracy.ml_rmse ?? '—'}</div>
                     </div>
                     <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px', borderRadius: '6px' }}>
-                      <div style={{ fontSize: '10px', color: '#64748b' }}>Open-Meteo</div>
-                      <div style={{ fontSize: '12px', fontWeight: '600', color: '#f97316', marginTop: '2px' }}>{accuracy.open_meteo_rmse}</div>
+                      <div style={{ fontSize: '10px', color: '#64748b' }}>Dir. Accuracy</div>
+                      <div style={{ fontSize: '12px', fontWeight: '600', color: '#f97316', marginTop: '2px' }}>{accuracy.directional_accuracy !== undefined ? `${(accuracy.directional_accuracy * 100).toFixed(0)}%` : '—'}</div>
                     </div>
                     <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px', borderRadius: '6px' }}>
-                      <div style={{ fontSize: '10px', color: '#64748b' }}>Persistence</div>
-                      <div style={{ fontSize: '12px', fontWeight: '600', color: '#94a3b8', marginTop: '2px' }}>{accuracy.persistence_rmse}</div>
+                      <div style={{ fontSize: '10px', color: '#64748b' }}>Persistence MAE</div>
+                      <div style={{ fontSize: '12px', fontWeight: '600', color: '#94a3b8', marginTop: '2px' }}>{accuracy.persistence_mae ?? accuracy.persistence_rmse ?? '—'}</div>
                     </div>
                     <div style={{ background: 'rgba(16, 185, 129, 0.05)', padding: '6px', borderRadius: '6px' }}>
                       <div style={{ fontSize: '10px', color: '#10b981' }}>Skill Score</div>
@@ -2458,7 +2458,7 @@ function ForecastView({ state, forecast, hours, onChangeHours, selectedWard, onS
                   </div>
                   <div style={{ fontSize: '10px', color: '#64748b', marginTop: '8px', textAlign: 'center' }}>
                     {accuracy.skill_score > 0 ? (
-                      <span>✅ ML Forecast beats uncalibrated persistence by <strong>{(accuracy.skill_score * 100).toFixed(0)}%</strong> (trained on {accuracy.training_samples} samples)</span>
+                      <span>✅ ML Forecast beats persistence by <strong>{(accuracy.skill_score * 100).toFixed(0)}%</strong> (trained on {accuracy.training_samples} samples, {accuracy.horizons_trained?.length || '?'} horizons)</span>
                     ) : (
                       <span>Persistence baseline is highly persistent (stable weather)</span>
                     )}
